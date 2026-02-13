@@ -20,7 +20,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 
 ## Screenshots
 
-<!-- Add screenshots here -->
+![MacTerminal](screenshots/main.png)
 
 ## Install
 
