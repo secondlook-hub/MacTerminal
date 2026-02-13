@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct MacTerminalApp: App {
     @StateObject private var bookmarkStore = SSHBookmarkStore()
+    @StateObject private var updateChecker = UpdateChecker()
     @FocusedValue(\.terminalScreen) var focusedScreen
     @FocusedValue(\.terminalTab) var focusedTab
     @FocusedValue(\.isRecording) var isRecording
@@ -16,6 +17,7 @@ struct MacTerminalApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(bookmarkStore)
+                .environmentObject(updateChecker)
         }
         .defaultSize(width: 1100, height: 650)
         .commands {
@@ -46,6 +48,13 @@ struct MacTerminalApp: App {
                     Self.findContainerView()?.toggleFindBar(show: true)
                 }
                 .keyboardShortcut("f", modifiers: .command)
+            }
+            CommandGroup(replacing: .help) {
+                Button("Check for Updates...") {
+                    Task {
+                        await updateChecker.checkForUpdates(manual: true)
+                    }
+                }
             }
             CommandGroup(after: .toolbar) {
                 Divider()

@@ -22,6 +22,7 @@
 		AA000000000000000000002F /* WindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000002D /* WindowManager.swift */; };
 		AA0000000000000000000033 /* DetachedWindowContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000002E /* DetachedWindowContent.swift */; };
 		AA0000000000000000000035 /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000034 /* SidebarItem.swift */; };
+		AA0000000000000000000037 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000036 /* UpdateChecker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 		AA000000000000000000002D /* WindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManager.swift; sourceTree = "<group>"; };
 		AA000000000000000000002E /* DetachedWindowContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetachedWindowContent.swift; sourceTree = "<group>"; };
 		AA0000000000000000000034 /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItem.swift; sourceTree = "<group>"; };
+		AA0000000000000000000036 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +101,7 @@
 				AA0000000000000000000016 /* SSHBookmarkStore.swift */,
 				AA000000000000000000001E /* TerminalTab.swift */,
 				AA000000000000000000002D /* WindowManager.swift */,
+				AA0000000000000000000036 /* UpdateChecker.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -203,6 +206,7 @@
 				AA000000000000000000002F /* WindowManager.swift in Sources */,
 				AA0000000000000000000033 /* DetachedWindowContent.swift in Sources */,
 				AA0000000000000000000035 /* SidebarItem.swift in Sources */,
+				AA0000000000000000000037 /* UpdateChecker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -349,7 +353,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -378,7 +382,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

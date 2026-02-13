@@ -30,6 +30,7 @@ extension FocusedValues {
 struct ContentView: View {
     @EnvironmentObject var bookmarkStore: SSHBookmarkStore
     @StateObject private var tabManager = TabManager()
+    @EnvironmentObject var updateChecker: UpdateChecker
     @State private var selectedItemID: UUID?
     @State private var showingAddSheet = false
     @State private var editingBookmark: SSHBookmark?
@@ -74,6 +75,29 @@ struct ContentView: View {
             SSHBookmarkEditView(bookmark: bookmark) { updated in
                 bookmarkStore.update(updated)
             }
+        }
+        .task {
+            await updateChecker.checkForUpdates()
+        }
+        .alert("Update Available", isPresented: $updateChecker.updateAvailable) {
+            if let downloadURL = updateChecker.downloadURL {
+                Button("Download") {
+                    NSWorkspace.shared.open(downloadURL)
+                }
+            }
+            if let releaseURL = updateChecker.releaseURL {
+                Button("View Release") {
+                    NSWorkspace.shared.open(releaseURL)
+                }
+            }
+            Button("Later", role: .cancel) {}
+        } message: {
+            Text("MacTerminal \(updateChecker.latestVersion) is available.\n(Current: \(updateChecker.currentVersion))")
+        }
+        .alert("No Updates Available", isPresented: $updateChecker.upToDate) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("MacTerminal \(updateChecker.currentVersion) is the latest version.")
         }
     }
 
