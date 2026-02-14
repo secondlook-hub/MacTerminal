@@ -7,6 +7,7 @@ struct MacTerminalApp: App {
     @FocusedValue(\.terminalScreen) var focusedScreen
     @FocusedValue(\.terminalTab) var focusedTab
     @FocusedValue(\.isRecording) var isRecording
+    @FocusedValue(\.tabManager) var focusedTabManager
     @AppStorage("blockSelectionMode") var blockSelectionMode = false
 
     init() {
@@ -49,12 +50,48 @@ struct MacTerminalApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
             }
+            CommandGroup(after: .newItem) {
+                Divider()
+
+                Button("New Tab") {
+                    focusedTabManager?.addLocalShellTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
+                .disabled(focusedTabManager == nil)
+
+                Button("Close Tab") {
+                    if let tab = focusedTab, let manager = focusedTabManager {
+                        manager.removeTab(tab.id)
+                        if manager.tabs.isEmpty {
+                            NSApp.keyWindow?.close()
+                        }
+                    } else {
+                        NSApp.keyWindow?.close()
+                    }
+                }
+                .keyboardShortcut("w", modifiers: .command)
+            }
             CommandGroup(replacing: .help) {
                 Button("Check for Updates...") {
                     Task {
                         await updateChecker.checkForUpdates(manual: true)
                     }
                 }
+            }
+            CommandGroup(before: .toolbar) {
+                Button("Split View") {
+                    focusedTab?.splitPane(axis: .horizontal)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(focusedTab == nil)
+
+                Button("Close Split View") {
+                    focusedTab?.closeSplit()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(focusedTab?.isSplit != true)
+
+                Divider()
             }
             CommandGroup(after: .toolbar) {
                 Divider()

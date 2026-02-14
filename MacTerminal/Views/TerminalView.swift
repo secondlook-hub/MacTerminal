@@ -127,6 +127,7 @@ class TerminalContainerView: NSView {
     private var findBarTop: NSLayoutConstraint!
     private var scrollViewTop: NSLayoutConstraint!
     private(set) var isFindBarVisible = false
+    var onFocused: (() -> Void)?
 
     init(terminal: PseudoTerminal, screen: TerminalScreen) {
         self.terminal = terminal
@@ -136,6 +137,7 @@ class TerminalContainerView: NSView {
 
         drawView.screen = screen
         drawView.terminal = terminal
+        drawView.onFocused = { [weak self] in self?.onFocused?() }
         setupUI()
         setupCallbacks()
         setupFindBar()
@@ -321,6 +323,7 @@ class TerminalContainerView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func becomeFirstResponder() -> Bool {
         window?.makeFirstResponder(drawView)
+        onFocused?()
         return true
     }
 }
@@ -330,6 +333,7 @@ class TerminalContainerView: NSView {
 class TerminalDrawView: NSView, NSUserInterfaceValidations {
     var screen: TerminalScreen!
     weak var terminal: PseudoTerminal?
+    var onFocused: (() -> Void)?
 
     var cellWidth: CGFloat
     var cellHeight: CGFloat
@@ -866,6 +870,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        onFocused?()
         if event.modifierFlags.contains(.command) {
             selectionMode = .block
         } else {

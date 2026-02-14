@@ -8,7 +8,8 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 ## Features
 
 - **Terminal Emulation** — Full pseudoterminal (`forkpty`) with `xterm-256color` support
-- **Tabs** — Multi-tab interface with drag & drop reordering
+- **Tabs** — Multi-tab interface with drag & drop reordering (Cmd+T / Cmd+W)
+- **Split View** — Side-by-side terminal panes within a tab (Cmd+D / Cmd+Shift+D to close)
 - **SSH Bookmarks** — Tree-structured connection manager with folders and subfolders
 - **Drag & Drop** — Reorder bookmarks and move them between folders
 - **Find** — In-terminal search with next/previous navigation (Cmd+F)
@@ -17,6 +18,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Customization** — Configurable font, background color, and text color
 - **Block Selection** — Toggle block selection mode for text
 - **Multi-Window** — Detachable terminal windows
+- **Auto Update** — Checks for new releases via GitHub Releases API
 
 ## Screenshots
 
@@ -36,6 +38,20 @@ xcodebuild -scheme MacTerminal -configuration Release build
 
 Requires **Xcode 15+** and **macOS 13.0 Ventura** or later.
 
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd+T | New Tab |
+| Cmd+W | Close Tab |
+| Cmd+D | Split View |
+| Cmd+Shift+D | Close Split View |
+| Cmd+F | Find |
+| Cmd+S | Save Shell Content |
+| Cmd+K | Clear Scrollback |
+| Cmd+C | Copy (with selection) |
+| Cmd+V | Paste |
+
 ## Project Structure
 
 ```
@@ -43,15 +59,18 @@ MacTerminal/
 ├── MacTerminalApp.swift          # App entry point, menu commands
 ├── ContentView.swift             # Main layout (sidebar + terminal)
 ├── Models/
+│   ├── SplitNode.swift           # Split view tree model (pane / split node)
 │   ├── SSHBookmark.swift         # SSH connection data model
 │   ├── SSHBookmarkStore.swift    # Tree-based bookmark persistence
 │   ├── SidebarItem.swift         # Tree node (folder / bookmark leaf)
-│   ├── TerminalTab.swift         # Tab state management
+│   ├── TerminalTab.swift         # Tab & split pane state management
+│   ├── UpdateChecker.swift       # GitHub Releases update checker
 │   └── WindowManager.swift       # Multi-window tracking
 ├── Terminal/
 │   ├── PseudoTerminal.swift      # PTY process management (forkpty)
 │   └── TerminalScreen.swift      # Terminal rendering engine
 └── Views/
+    ├── SplitTerminalView.swift   # Recursive split view renderer
     ├── SidebarView.swift         # SSH bookmark tree with drag & drop
     ├── SSHBookmarkEditView.swift # Bookmark add/edit form
     ├── TabBarView.swift          # Tab bar with drag reordering

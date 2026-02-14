@@ -7,13 +7,16 @@ struct DetachedWindowContent: View {
         VStack(spacing: 0) {
             TabBarView(tabManager: tabManager)
             if let tab = tabManager.selectedTab {
-                TerminalView(tab: tab)
+                SplitTerminalView(nodeRef: tab.rootNode, tab: tab)
                     .id(tab.id)
             } else {
                 Color(nsColor: .terminalBG)
             }
         }
         .focusedSceneValue(\.terminalScreen, tabManager.selectedTab?.screen)
+        .focusedSceneValue(\.terminalTab, tabManager.selectedTab)
+        .focusedSceneValue(\.isRecording, tabManager.selectedTab?.isRecording ?? false)
+        .focusedSceneValue(\.tabManager, tabManager)
         .onReceive(tabManager.$tabs) { tabs in
             if tabs.isEmpty {
                 WindowManager.shared.closeDetachedWindow(for: tabManager.id)

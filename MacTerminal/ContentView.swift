@@ -12,6 +12,10 @@ struct FocusedRecordingKey: FocusedValueKey {
     typealias Value = Bool
 }
 
+struct FocusedTabManagerKey: FocusedValueKey {
+    typealias Value = TabManager
+}
+
 extension FocusedValues {
     var terminalScreen: TerminalScreen? {
         get { self[FocusedScreenKey.self] }
@@ -24,6 +28,10 @@ extension FocusedValues {
     var isRecording: Bool? {
         get { self[FocusedRecordingKey.self] }
         set { self[FocusedRecordingKey.self] = newValue }
+    }
+    var tabManager: TabManager? {
+        get { self[FocusedTabManagerKey.self] }
+        set { self[FocusedTabManagerKey.self] = newValue }
     }
 }
 
@@ -49,7 +57,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 TabBarView(tabManager: tabManager)
                 if let tab = tabManager.selectedTab {
-                    TerminalView(tab: tab)
+                    SplitTerminalView(nodeRef: tab.rootNode, tab: tab)
                         .id(tab.id)
                 } else {
                     Color(nsColor: .terminalBG)
@@ -59,6 +67,7 @@ struct ContentView: View {
         .focusedSceneValue(\.terminalScreen, tabManager.selectedTab?.screen)
         .focusedSceneValue(\.terminalTab, tabManager.selectedTab)
         .focusedSceneValue(\.isRecording, tabManager.selectedTab?.isRecording ?? false)
+        .focusedSceneValue(\.tabManager, tabManager)
         .navigationTitle(tabManager.selectedTab?.windowTitle ?? "MacTerminal")
         .onAppear {
             DispatchQueue.main.async {
