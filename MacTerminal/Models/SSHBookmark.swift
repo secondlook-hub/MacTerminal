@@ -7,16 +7,14 @@ struct SSHBookmark: Identifiable, Codable, Hashable {
     var port: Int
     var username: String
     var password: String
-    var sshKeyPath: String?
 
     init(id: UUID = UUID(), name: String = "", host: String = "", port: Int = 22,
-         username: String = "", password: String = "", sshKeyPath: String? = nil) {
+         username: String = "", password: String = "") {
         self.id = id
         self.name = name
         self.host = host
         self.port = port
         self.username = username
         self.password = password
-        self.sshKeyPath = sshKeyPath
     }
 }

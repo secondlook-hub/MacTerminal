@@ -8,6 +8,11 @@ class PseudoTerminal: ObservableObject {
     // UTF-8 remainder bytes from previous read (accessed only from read queue)
     private var utf8Remainder = Data()
 
+    /// Password to auto-send when an SSH password prompt is detected (one-shot).
+    var pendingPassword: String?
+    /// Buffer accumulating recent output for prompt detection (accessed only from read queue).
+    private var passwordBuffer = ""
+
     var onOutput: ((Data) -> Void)?
     var onProcessExit: (() -> Void)?
 
@@ -64,6 +69,22 @@ class PseudoTerminal: ObservableObject {
                 // Split at the last complete UTF-8 boundary
                 let (complete, remainder) = Self.splitUTF8(data)
                 self.utf8Remainder = remainder
+
+                // Auto-password: detect SSH password prompt and send stored password
+                if let password = self.pendingPassword,
+                   let text = String(data: complete, encoding: .utf8) {
+                    self.passwordBuffer += text
+                    // Keep buffer from growing unbounded (last 256 chars is enough)
+                    if self.passwordBuffer.count > 256 {
+                        self.passwordBuffer = String(self.passwordBuffer.suffix(256))
+                    }
+                    if self.passwordBuffer.range(of: "password:", options: .caseInsensitive) != nil {
+                        let payload = password + "\r"
+                        self.pendingPassword = nil
+                        self.passwordBuffer = ""
+                        self.writeData(Data(payload.utf8))
+                    }
+                }
 
                 if !complete.isEmpty {
                     DispatchQueue.main.async {

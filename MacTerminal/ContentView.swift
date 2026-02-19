@@ -113,10 +113,11 @@ struct ContentView: View {
     private func connectToHost(_ bookmark: SSHBookmark) {
         let tab = tabManager.addTab(title: bookmark.name)
 
-        var cmd = "ssh"
-        if let keyPath = bookmark.sshKeyPath, !keyPath.isEmpty {
-            cmd += " -i \"\(keyPath)\""
+        if !bookmark.password.isEmpty {
+            tab.terminal.pendingPassword = bookmark.password
         }
+
+        var cmd = "ssh"
         if bookmark.port != 22 {
             cmd += " -p \(bookmark.port)"
         }

@@ -8,7 +8,6 @@ struct SSHBookmarkEditView: View {
     @State private var port: String
     @State private var username: String
     @State private var password: String
-    @State private var sshKeyPath: String
     @State private var showPassword = false
 
     private let existingBookmark: SSHBookmark?
@@ -22,7 +21,6 @@ struct SSHBookmarkEditView: View {
         _port = State(initialValue: String(bookmark?.port ?? 22))
         _username = State(initialValue: bookmark?.username ?? "")
         _password = State(initialValue: bookmark?.password ?? "")
-        _sshKeyPath = State(initialValue: bookmark?.sshKeyPath ?? "")
     }
 
     var isValid: Bool {
@@ -70,13 +68,6 @@ struct SSHBookmarkEditView: View {
                         .buttonStyle(.borderless)
                     }
 
-                    HStack {
-                        TextField("SSH Key Path", text: $sshKeyPath)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Browse...") {
-                            selectSSHKey()
-                        }
-                    }
                 }
             }
             .formStyle(.grouped)
@@ -109,24 +100,10 @@ struct SSHBookmarkEditView: View {
             host: host,
             port: Int(port) ?? 22,
             username: username,
-            password: password,
-            sshKeyPath: sshKeyPath.isEmpty ? nil : sshKeyPath
+            password: password
         )
         onSave(bookmark)
         dismiss()
     }
 
-    private func selectSSHKey() {
-        let panel = NSOpenPanel()
-        panel.title = "Select SSH Key"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
-        panel.showsHiddenFiles = true
-
-        if panel.runModal() == .OK, let url = panel.url {
-            sshKeyPath = url.path
-        }
-    }
 }

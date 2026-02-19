@@ -217,12 +217,6 @@ struct BookmarkRow: View {
                 }
             }
             Spacer()
-            if bookmark.sshKeyPath != nil {
-                Image(systemName: "key.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .help("SSH Key configured")
-            }
         }
         .padding(.vertical, 2)
     }
