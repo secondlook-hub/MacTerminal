@@ -11,6 +11,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Tabs** — Multi-tab interface with drag & drop reordering (Cmd+T / Cmd+W)
 - **Split View** — Side-by-side terminal panes within a tab (Cmd+D / Cmd+Shift+D to close)
 - **SSH Bookmarks** — Tree-structured connection manager with folders and subfolders
+- **SSH Auto-Password** — Automatically detects SSH password prompt and sends stored password (one-shot)
 - **Drag & Drop** — Reorder bookmarks and move them between folders
 - **Find** — In-terminal search with next/previous navigation (Cmd+F)
 - **Recording** — Record terminal sessions to text files
