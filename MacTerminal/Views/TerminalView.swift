@@ -139,7 +139,6 @@ class TerminalContainerView: NSView {
         drawView.terminal = terminal
         drawView.onFocused = { [weak self] in self?.onFocused?() }
         setupUI()
-        setupCallbacks()
         setupFindBar()
     }
 
@@ -272,21 +271,10 @@ class TerminalContainerView: NSView {
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
-    private func setupCallbacks() {
-        terminal.onOutput = { [weak self] data in
-            guard let self = self else { return }
-            self.screen.process(data)
-            self.refreshDisplay()
-        }
-        terminal.onProcessExit = { [weak self] in
-            guard let self = self else { return }
-            let msg = "\r\n[Process exited]\r\n"
-            for s in msg.unicodeScalars { self.screen.processScalar(s) }
-            self.screen.onChange?()
-            self.refreshDisplay()
-        }
-        screen.onResponse = { [weak self] response in
-            self?.terminal.write(response)
+    /// Connect this container's display refresh to a TerminalPane's data pipeline.
+    func bindToPane(_ pane: TerminalPane) {
+        pane.onScreenUpdate = { [weak self] in
+            self?.refreshDisplay()
         }
     }
 
@@ -398,6 +386,27 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     convenience init() { self.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
     deinit { blinkTimer?.invalidate() }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        registerForDraggedTypes([.fileURL])
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true
+        ]) as? [URL] else { return false }
+
+        let paths = items.map { path in
+            path.path.contains(" ") ? "\"\(path.path)\"" : path.path
+        }
+        terminal?.write(paths.joined(separator: " "))
+        return true
+    }
 
     // MARK: - Persistence Helpers
 

@@ -91,6 +91,7 @@ class TabBarNSView: NSView {
             let item = TabItemNSView(
                 tabID: tab.id, title: tab.title,
                 isSelected: tab.id == manager.selectedTabID,
+                hasUpdate: tab.hasUpdate,
                 managerID: manager.id
             )
             item.onSelect = { [weak manager] in manager?.selectTab(tab.id) }
@@ -122,7 +123,7 @@ class TabBarNSView: NSView {
             let tab = dest.tabs.remove(at: fromIdx)
             let toIdx = idx > fromIdx ? idx - 1 : idx
             dest.tabs.insert(tab, at: min(toIdx, dest.tabs.count))
-            dest.selectedTabID = tab.id
+            dest.selectTab(tab.id)
         } else {
             WindowManager.shared.transferTab(
                 tabID: data.tabID, from: data.sourceManagerID,
@@ -153,6 +154,7 @@ class TabItemNSView: NSView {
     let tabID: UUID
     let managerID: UUID
     private let isSelected: Bool
+    private let hasUpdate: Bool
 
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
@@ -166,9 +168,10 @@ class TabItemNSView: NSView {
     private let closeBtn = NSButton()
     private let accentBar = NSView()
 
-    init(tabID: UUID, title: String, isSelected: Bool, managerID: UUID) {
+    init(tabID: UUID, title: String, isSelected: Bool, hasUpdate: Bool, managerID: UUID) {
         self.tabID = tabID
         self.isSelected = isSelected
+        self.hasUpdate = hasUpdate
         self.managerID = managerID
         super.init(frame: .zero)
         setupViews(title: title)
@@ -230,18 +233,59 @@ class TabItemNSView: NSView {
     }
 
     private func updateAppearance() {
+        stopBlinkAnimation()
+
         if isSelected {
             layer?.backgroundColor = NSColor.terminalBG.cgColor
         } else if isHovering {
             layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        } else if hasUpdate {
+            startBlinkAnimation()
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }
-        iconView.contentTintColor = .white.withAlphaComponent(isSelected ? 1.0 : 0.35)
-        titleLabel.textColor = .white.withAlphaComponent(isSelected ? 1.0 : 0.5)
+
+        let iconAlpha: CGFloat
+        let titleAlpha: CGFloat
+        if isSelected {
+            iconAlpha = 1.0
+            titleAlpha = 1.0
+        } else if hasUpdate {
+            iconAlpha = 0.75
+            titleAlpha = 0.85
+        } else {
+            iconAlpha = 0.35
+            titleAlpha = 0.5
+        }
+
+        iconView.contentTintColor = .white.withAlphaComponent(iconAlpha)
+        titleLabel.textColor = .white.withAlphaComponent(titleAlpha)
         closeBtn.contentTintColor = .white.withAlphaComponent(0.4)
         closeBtn.isHidden = !(isSelected || isHovering)
-        accentBar.layer?.backgroundColor = isSelected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
+
+        if isSelected {
+            accentBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        } else if hasUpdate {
+            accentBar.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.4).cgColor
+        } else {
+            accentBar.layer?.backgroundColor = NSColor.clear.cgColor
+        }
+    }
+
+    private func startBlinkAnimation() {
+        guard let layer = self.layer else { return }
+        let anim = CABasicAnimation(keyPath: "backgroundColor")
+        anim.fromValue = NSColor.clear.cgColor
+        anim.toValue = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor
+        anim.duration = 0.9
+        anim.autoreverses = true
+        anim.repeatCount = .infinity
+        anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(anim, forKey: "blink")
+    }
+
+    private func stopBlinkAnimation() {
+        layer?.removeAnimation(forKey: "blink")
     }
 
     @objc private func closeTapped() { onClose?() }

@@ -5,9 +5,31 @@ class TerminalPane: Identifiable, ObservableObject {
     let terminal: PseudoTerminal
     let screen: TerminalScreen
 
+    /// Called on main thread after screen content updates; set by the view layer for display refresh.
+    var onScreenUpdate: (() -> Void)?
+
     init() {
         self.terminal = PseudoTerminal()
         self.screen = TerminalScreen()
+        setupDataProcessing()
+    }
+
+    private func setupDataProcessing() {
+        terminal.onOutput = { [weak self] data in
+            guard let self = self else { return }
+            self.screen.process(data)
+            self.onScreenUpdate?()
+        }
+        terminal.onProcessExit = { [weak self] in
+            guard let self = self else { return }
+            let msg = "\r\n[Process exited]\r\n"
+            for s in msg.unicodeScalars { self.screen.processScalar(s) }
+            self.screen.onChange?()
+            self.onScreenUpdate?()
+        }
+        screen.onResponse = { [weak self] response in
+            self?.terminal.write(response)
+        }
     }
 }
 

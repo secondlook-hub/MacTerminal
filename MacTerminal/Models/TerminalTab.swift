@@ -7,6 +7,14 @@ class TerminalTab: Identifiable, ObservableObject {
     @Published var windowTitle: String
     @Published var isRecording = false
     @Published var focusedPaneID: UUID
+    var isActive = false
+    var hasUpdate: Bool = false {
+        didSet {
+            if hasUpdate != oldValue {
+                objectWillChange.send()
+            }
+        }
+    }
     let rootNode: SplitNodeRef
 
     var terminal: PseudoTerminal { focusedPane.terminal }
@@ -32,6 +40,12 @@ class TerminalTab: Identifiable, ObservableObject {
         }
         pane.screen.onCommandEntered = { [weak self] cmd in
             DispatchQueue.main.async { self?.title = cmd }
+        }
+        pane.screen.onChange = { [weak self] in
+            guard let self = self, !self.isActive else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.hasUpdate = true
+            }
         }
     }
 
@@ -139,11 +153,18 @@ class TabManager: Identifiable, ObservableObject {
         }
     }
 
+    private func updateActiveTab() {
+        for tab in tabs {
+            tab.isActive = (tab.id == selectedTabID)
+        }
+    }
+
     @discardableResult
     func addLocalShellTab() -> TerminalTab {
         let tab = TerminalTab(title: "Shell")
         tabs.append(tab)
         selectedTabID = tab.id
+        updateActiveTab()
         observeTab(tab)
         tab.terminal.start()
         return tab
@@ -154,6 +175,7 @@ class TabManager: Identifiable, ObservableObject {
         let tab = TerminalTab(title: title)
         tabs.append(tab)
         selectedTabID = tab.id
+        updateActiveTab()
         observeTab(tab)
         tab.terminal.start()
         return tab
@@ -174,6 +196,7 @@ class TabManager: Identifiable, ObservableObject {
                 selectedTabID = nil
             }
         }
+        updateActiveTab()
     }
 
     /// Remove tab without stopping its terminal (for transferring between windows)
@@ -190,6 +213,7 @@ class TabManager: Identifiable, ObservableObject {
                 selectedTabID = nil
             }
         }
+        updateActiveTab()
         return tab
     }
 
@@ -202,9 +226,14 @@ class TabManager: Identifiable, ObservableObject {
         }
         observeTab(tab)
         selectedTabID = tab.id
+        updateActiveTab()
     }
 
     func selectTab(_ id: UUID) {
         selectedTabID = id
+        updateActiveTab()
+        if let tab = tabs.first(where: { $0.id == id }) {
+            tab.hasUpdate = false
+        }
     }
 }

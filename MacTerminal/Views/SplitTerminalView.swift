@@ -62,6 +62,7 @@ struct TerminalPaneRepresentable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalContainerView {
         let container = TerminalContainerView(terminal: pane.terminal, screen: pane.screen)
+        container.bindToPane(pane)
         container.onFocused = { [weak tab, paneID = pane.id] in
             tab?.focusedPaneID = paneID
         }
