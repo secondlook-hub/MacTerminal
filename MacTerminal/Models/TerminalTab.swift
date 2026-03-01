@@ -51,6 +51,7 @@ class TerminalTab: Identifiable, ObservableObject {
 
     func splitPane(axis: SplitAxis) {
         let currentPane = focusedPane
+        let dir = currentPane.screen.currentDirectory
         let newPane = TerminalPane()
         setupPaneCallbacks(newPane)
         let oldLeaf = SplitNode.leaf(currentPane)
@@ -58,7 +59,7 @@ class TerminalTab: Identifiable, ObservableObject {
         let splitNode = SplitNode.split(axis: axis, first: oldLeaf, second: newLeaf)
         rootNode.node = rootNode.node.replacingPane(focusedPaneID, with: splitNode)
         focusedPaneID = newPane.id
-        newPane.terminal.start()
+        newPane.terminal.start(workingDirectory: dir)
     }
 
     /// Returns true if the pane was closed (multi-pane). Returns false if this was the last pane.
@@ -161,12 +162,13 @@ class TabManager: Identifiable, ObservableObject {
 
     @discardableResult
     func addLocalShellTab() -> TerminalTab {
+        let dir = selectedTab?.screen.currentDirectory
         let tab = TerminalTab(title: "Shell")
         tabs.append(tab)
         selectedTabID = tab.id
         updateActiveTab()
         observeTab(tab)
-        tab.terminal.start()
+        tab.terminal.start(workingDirectory: dir)
         return tab
     }
 

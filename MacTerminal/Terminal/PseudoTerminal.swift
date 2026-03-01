@@ -18,7 +18,7 @@ class PseudoTerminal: ObservableObject {
 
     var isRunning: Bool { childPID > 0 }
 
-    func start(shell: String = "/bin/zsh") {
+    func start(shell: String = "/bin/zsh", workingDirectory: String? = nil) {
         if isRunning { stop() }
 
         var master: Int32 = 0
@@ -28,6 +28,9 @@ class PseudoTerminal: ObservableObject {
 
         if pid == 0 {
             // Child process
+            let dir = workingDirectory ?? NSHomeDirectory()
+            chdir(dir)
+
             setenv("TERM", "xterm-256color", 1)
             setenv("TERM_PROGRAM", "Apple_Terminal", 1)
             setenv("LANG", "en_US.UTF-8", 1)

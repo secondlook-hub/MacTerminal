@@ -25,6 +25,8 @@
 		AA0000000000000000000037 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000036 /* UpdateChecker.swift */; };
 		AA000000000000000000003A /* SplitNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000038 /* SplitNode.swift */; };
 		AA000000000000000000003B /* SplitTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000039 /* SplitTerminalView.swift */; };
+		AA000000000000000000003E /* CommandItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000003C /* CommandItem.swift */; };
+		AA000000000000000000003F /* CommandEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000003D /* CommandEditView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,8 @@
 		AA0000000000000000000036 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		AA0000000000000000000038 /* SplitNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitNode.swift; sourceTree = "<group>"; };
 		AA0000000000000000000039 /* SplitTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTerminalView.swift; sourceTree = "<group>"; };
+		AA000000000000000000003C /* CommandItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandItem.swift; sourceTree = "<group>"; };
+		AA000000000000000000003D /* CommandEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandEditView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +98,7 @@
 				AA0000000000000000000014 /* SSHBookmarkEditView.swift */,
 				AA000000000000000000001F /* TabBarView.swift */,
 				AA000000000000000000002E /* DetachedWindowContent.swift */,
+				AA000000000000000000003D /* CommandEditView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -108,6 +113,7 @@
 				AA000000000000000000001E /* TerminalTab.swift */,
 				AA000000000000000000002D /* WindowManager.swift */,
 				AA0000000000000000000036 /* UpdateChecker.swift */,
+				AA000000000000000000003C /* CommandItem.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -215,6 +221,8 @@
 				AA0000000000000000000037 /* UpdateChecker.swift in Sources */,
 				AA000000000000000000003A /* SplitNode.swift in Sources */,
 				AA000000000000000000003B /* SplitTerminalView.swift in Sources */,
+				AA000000000000000000003E /* CommandItem.swift in Sources */,
+				AA000000000000000000003F /* CommandEditView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -361,7 +369,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -390,7 +398,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

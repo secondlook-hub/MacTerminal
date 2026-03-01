@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct MacTerminalApp: App {
     @StateObject private var bookmarkStore = SSHBookmarkStore()
+    @StateObject private var commandStore = CommandStore()
     @StateObject private var updateChecker = UpdateChecker()
     @FocusedValue(\.terminalScreen) var focusedScreen
     @FocusedValue(\.terminalTab) var focusedTab
@@ -12,12 +13,15 @@ struct MacTerminalApp: App {
 
     init() {
         NSWindow.allowsAutomaticWindowTabbing = false
+        // Disable macOS "press and hold" accent popup so all keys repeat normally
+        UserDefaults.standard.set(false, forKey: "ApplePressAndHoldEnabled")
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(bookmarkStore)
+                .environmentObject(commandStore)
                 .environmentObject(updateChecker)
         }
         .defaultSize(width: 1100, height: 650)

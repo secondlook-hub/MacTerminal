@@ -1,70 +1,96 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum SidebarTab: String, CaseIterable {
+    case connections = "Connections"
+    case commands = "Commands"
+}
+
 struct SidebarView: View {
     @EnvironmentObject var bookmarkStore: SSHBookmarkStore
+    @EnvironmentObject var commandStore: CommandStore
     @Binding var selectedItemID: UUID?
     @Binding var showingAddSheet: Bool
     @Binding var editingBookmark: SSHBookmark?
     @Binding var targetFolderID: UUID?
+    @Binding var showingAddCommandSheet: Bool
+    @Binding var editingCommand: CommandItem?
     var onConnect: (SSHBookmark) -> Void
+    var onRunCommand: (CommandItem) -> Void
 
+    @State private var sidebarTab: SidebarTab = .connections
     @State private var renamingFolderID: UUID?
     @State private var renameFolderName: String = ""
     @State private var draggedItemID: UUID?
+    @State private var selectedCommandID: UUID?
 
     var body: some View {
-        List {
-            Section("SSH Connections") {
-                OutlineGroup(bookmarkStore.rootItems, children: \.children) { item in
-                    SidebarItemRow(item: item)
-                        .tag(item.id)
-                        .listRowBackground(rowBackground(for: item.id))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedItemID = item.id
-                        }
-                        .onDrag {
-                            draggedItemID = item.id
-                            return NSItemProvider(object: item.id.uuidString as NSString)
-                        }
-                        .onDrop(of: [.plainText], delegate: SidebarDropDelegate(
-                            targetItem: item,
-                            bookmarkStore: bookmarkStore,
-                            draggedItemID: $draggedItemID
-                        ))
-                        .contextMenu {
-                            if item.isFolder {
-                                folderContextMenu(item)
-                            } else if let bm = item.bookmark {
-                                bookmarkContextMenu(bm)
-                            }
-                        }
+        VStack(spacing: 0) {
+            Picker("", selection: $sidebarTab) {
+                ForEach(SidebarTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            switch sidebarTab {
+            case .connections:
+                connectionsTab
+            case .commands:
+                commandsTab
             }
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("New Connection...") {
-                        if let id = selectedItemID,
-                           let item = bookmarkStore.findItem(byID: id),
-                           item.isFolder {
-                            targetFolderID = id
-                        } else {
-                            targetFolderID = nil
-                        }
-                        showingAddSheet = true
-                    }
-                    Button("New Folder") {
-                        bookmarkStore.addFolder(name: "New Folder", parentID: selectedFolderID)
-                    }
-                } label: {
-                    Image(systemName: "plus")
+                if sidebarTab == .connections {
+                    connectionsToolbar
+                } else {
+                    commandsToolbar
                 }
-                .help("Add Connection or Folder")
+            }
+        }
+        .alert("Rename Folder", isPresented: showingRenameAlert) {
+            TextField("Folder name", text: $renameFolderName)
+            Button("Cancel", role: .cancel) { renamingFolderID = nil }
+            Button("Rename") {
+                if let id = renamingFolderID, !renameFolderName.isEmpty {
+                    bookmarkStore.renameFolder(id: id, newName: renameFolderName)
+                }
+                renamingFolderID = nil
+            }
+        }
+    }
+
+    // MARK: - Connections Tab
+
+    private var connectionsTab: some View {
+        List {
+            OutlineGroup(bookmarkStore.rootItems, children: \.children) { item in
+                SidebarItemRow(item: item)
+                    .tag(item.id)
+                    .listRowBackground(rowBackground(for: item.id))
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedItemID = item.id }
+                    .onDrag {
+                        draggedItemID = item.id
+                        return NSItemProvider(object: item.id.uuidString as NSString)
+                    }
+                    .onDrop(of: [.plainText], delegate: SidebarDropDelegate(
+                        targetItem: item,
+                        bookmarkStore: bookmarkStore,
+                        draggedItemID: $draggedItemID
+                    ))
+                    .contextMenu {
+                        if item.isFolder {
+                            folderContextMenu(item)
+                        } else if let bm = item.bookmark {
+                            bookmarkContextMenu(bm)
+                        }
+                    }
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -78,18 +104,74 @@ struct SidebarView: View {
                 .padding()
             }
         }
-        .alert("Rename Folder", isPresented: showingRenameAlert) {
-            TextField("Folder name", text: $renameFolderName)
-            Button("Cancel", role: .cancel) {
-                renamingFolderID = nil
+    }
+
+    // MARK: - Commands Tab
+
+    private var commandsTab: some View {
+        List(selection: $selectedCommandID) {
+            ForEach(commandStore.commands) { cmd in
+                CommandRow(command: cmd)
+                    .tag(cmd.id)
+                    .listRowBackground(commandRowBackground(for: cmd.id))
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedCommandID = cmd.id }
+                    .gesture(TapGesture(count: 2).onEnded { onRunCommand(cmd) })
+                    .contextMenu {
+                        Button("Run") { onRunCommand(cmd) }
+                        Divider()
+                        Button("Edit...") { editingCommand = cmd }
+                        Button("Delete", role: .destructive) {
+                            commandStore.delete(id: cmd.id)
+                            if selectedCommandID == cmd.id {
+                                selectedCommandID = nil
+                            }
+                        }
+                    }
             }
-            Button("Rename") {
-                if let id = renamingFolderID, !renameFolderName.isEmpty {
-                    bookmarkStore.renameFolder(id: id, newName: renameFolderName)
+            .onMove { commandStore.move(fromOffsets: $0, toOffset: $1) }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if let cmd = selectedCommand {
+                Button(action: { onRunCommand(cmd) }) {
+                    Label("Run", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
                 }
-                renamingFolderID = nil
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding()
             }
         }
+    }
+
+    // MARK: - Toolbars
+
+    private var connectionsToolbar: some View {
+        Menu {
+            Button("New Connection...") {
+                if let id = selectedItemID,
+                   let item = bookmarkStore.findItem(byID: id),
+                   item.isFolder {
+                    targetFolderID = id
+                } else {
+                    targetFolderID = nil
+                }
+                showingAddSheet = true
+            }
+            Button("New Folder") {
+                bookmarkStore.addFolder(name: "New Folder", parentID: selectedFolderID)
+            }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .help("Add Connection or Folder")
+    }
+
+    private var commandsToolbar: some View {
+        Button(action: { showingAddCommandSheet = true }) {
+            Image(systemName: "plus")
+        }
+        .help("Add Command")
     }
 
     // MARK: - Helpers
@@ -97,8 +179,16 @@ struct SidebarView: View {
     @ViewBuilder
     private func rowBackground(for id: UUID) -> some View {
         if selectedItemID == id {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color.accentColor.opacity(0.2))
+            RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.2))
+        } else {
+            Color.clear
+        }
+    }
+
+    @ViewBuilder
+    private func commandRowBackground(for id: UUID) -> some View {
+        if selectedCommandID == id {
+            RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.2))
         } else {
             Color.clear
         }
@@ -113,6 +203,11 @@ struct SidebarView: View {
               let item = bookmarkStore.findItem(byID: id),
               item.isFolder else { return nil }
         return id
+    }
+
+    private var selectedCommand: CommandItem? {
+        guard let id = selectedCommandID else { return nil }
+        return commandStore.commands.first { $0.id == id }
     }
 
     private var showingRenameAlert: Binding<Bool> {
@@ -140,26 +235,18 @@ struct SidebarView: View {
         }
         Button("Delete", role: .destructive) {
             bookmarkStore.deleteItem(id: item.id)
-            if selectedItemID == item.id {
-                selectedItemID = nil
-            }
+            if selectedItemID == item.id { selectedItemID = nil }
         }
     }
 
     @ViewBuilder
     private func bookmarkContextMenu(_ bookmark: SSHBookmark) -> some View {
-        Button("Connect") {
-            onConnect(bookmark)
-        }
+        Button("Connect") { onConnect(bookmark) }
         Divider()
-        Button("Edit...") {
-            editingBookmark = bookmark
-        }
+        Button("Edit...") { editingBookmark = bookmark }
         Button("Delete", role: .destructive) {
             bookmarkStore.delete(bookmark)
-            if selectedItemID == bookmark.id {
-                selectedItemID = nil
-            }
+            if selectedItemID == bookmark.id { selectedItemID = nil }
         }
     }
 }
@@ -222,6 +309,30 @@ struct BookmarkRow: View {
     }
 }
 
+struct CommandRow: View {
+    let command: CommandItem
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "terminal")
+                .foregroundColor(.accentColor)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(command.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(command.command)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 // MARK: - Drag & Drop
 
 struct SidebarDropDelegate: DropDelegate {
@@ -267,7 +378,5 @@ struct SidebarDropDelegate: DropDelegate {
         return true
     }
 
-    func dropExited(info: DropInfo) {
-        // Keep draggedItemID alive for other drop targets
-    }
+    func dropExited(info: DropInfo) {}
 }

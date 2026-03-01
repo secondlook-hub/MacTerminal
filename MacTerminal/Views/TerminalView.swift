@@ -120,6 +120,8 @@ class TerminalContainerView: NSView {
     let scrollView = NSScrollView()
     let drawView: TerminalDrawView
     let findBar = FindBarView()
+    let statusBar = StatusBarView()
+    static let statusBarHeight: CGFloat = 20
     let screen: TerminalScreen
     let terminal: PseudoTerminal
     var lastCols = 0
@@ -138,8 +140,12 @@ class TerminalContainerView: NSView {
         drawView.screen = screen
         drawView.terminal = terminal
         drawView.onFocused = { [weak self] in self?.onFocused?() }
+        drawView.onSelectionChange = { [weak self] sel in
+            self?.updateStatusBar(selection: sel)
+        }
         setupUI()
         setupFindBar()
+        setupStatusBar()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -151,7 +157,7 @@ class TerminalContainerView: NSView {
         scrollViewTop = scrollView.topAnchor.constraint(equalTo: topAnchor)
         NSLayoutConstraint.activate([
             scrollViewTop,
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.statusBarHeight),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
@@ -178,6 +184,29 @@ class TerminalContainerView: NSView {
         findBar.onNext = { [weak self] in self?.navigateMatch(forward: true) }
         findBar.onPrev = { [weak self] in self?.navigateMatch(forward: false) }
         findBar.onClose = { [weak self] in self?.toggleFindBar(show: false) }
+    }
+
+    private func setupStatusBar() {
+        statusBar.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(statusBar)
+        NSLayoutConstraint.activate([
+            statusBar.bottomAnchor.constraint(equalTo: bottomAnchor),
+            statusBar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            statusBar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            statusBar.heightAnchor.constraint(equalToConstant: Self.statusBarHeight),
+        ])
+    }
+
+    func updateStatusBar(selection: (start: (row: Int, col: Int), end: (row: Int, col: Int))? = nil) {
+        let ln = screen.cursorRow + 1
+        let col = screen.cursorCol + 1
+        var text = "Ln \(ln), Col \(col)"
+        if let sel = selection {
+            let s = sel.start
+            let e = sel.end
+            text += "  |  Sel \(s.row + 1):\(s.col + 1) - \(e.row + 1):\(e.col + 1)"
+        }
+        statusBar.update(text)
     }
 
     func toggleFindBar(show: Bool) {
@@ -280,7 +309,8 @@ class TerminalContainerView: NSView {
 
     func refreshDisplay() {
         let totalLines = screen.scrollback.count + screen.rows
-        let height = max(CGFloat(totalLines) * drawView.cellHeight, scrollView.contentSize.height)
+        let contentHeight = CGFloat(totalLines) * drawView.cellHeight + drawView.paddingBottom
+        let height = max(contentHeight, scrollView.contentSize.height)
         let width = scrollView.contentSize.width
 
         drawView.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -291,14 +321,17 @@ class TerminalContainerView: NSView {
         let maxY = max(0, height - clipView.bounds.height)
         clipView.scroll(to: NSPoint(x: 0, y: maxY))
         scrollView.reflectScrolledClipView(clipView)
+
+        updateStatusBar()
     }
 
     override func layout() {
         super.layout()
         guard bounds.width > 0, bounds.height > 0 else { return }
 
-        let cols = max(Int(bounds.width / drawView.cellWidth), 20)
-        let rows = max(Int(bounds.height / drawView.cellHeight), 5)
+        let availableHeight = bounds.height - Self.statusBarHeight
+        let cols = max(Int((bounds.width - drawView.paddingLeft) / drawView.cellWidth), 20)
+        let rows = max(Int((availableHeight - drawView.paddingBottom) / drawView.cellHeight), 5)
 
         if cols != lastCols || rows != lastRows {
             lastCols = cols; lastRows = rows
@@ -322,9 +355,12 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     var screen: TerminalScreen!
     weak var terminal: PseudoTerminal?
     var onFocused: (() -> Void)?
+    var onSelectionChange: (((start: (row: Int, col: Int), end: (row: Int, col: Int))?) -> Void)?
 
     var cellWidth: CGFloat
     var cellHeight: CGFloat
+    let paddingLeft: CGFloat = 4
+    var paddingBottom: CGFloat  // one line height, set after cellHeight
     var defaultFont: NSFont
     var boldFont: NSFont
 
@@ -378,6 +414,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let measure = ("W" as NSString).size(withAttributes: [.font: defaultFont])
         cellWidth = ceil(measure.width)
         cellHeight = ceil(measure.height)
+        paddingBottom = cellHeight
         bgColor = Self.loadColor(forKey: "terminalBGColor") ?? NSColor.terminalBG
         fgColor = Self.loadColor(forKey: "terminalFGColor") ?? TerminalScreen.defaultFG
         super.init(frame: frame)
@@ -472,6 +509,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let measure = ("W" as NSString).size(withAttributes: [.font: newFont])
         cellWidth = ceil(measure.width)
         cellHeight = ceil(measure.height)
+        paddingBottom = cellHeight
 
         UserDefaults.standard.set(newFont.fontName, forKey: "terminalFontName")
         UserDefaults.standard.set(Double(newFont.pointSize), forKey: "terminalFontSize")
@@ -493,6 +531,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let measure = ("W" as NSString).size(withAttributes: [.font: defaultFont])
         cellWidth = ceil(measure.width)
         cellHeight = ceil(measure.height)
+        paddingBottom = cellHeight
         UserDefaults.standard.removeObject(forKey: "terminalFontName")
         UserDefaults.standard.removeObject(forKey: "terminalFontSize")
 
@@ -568,7 +607,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     continue
                 }
 
-                let x = CGFloat(col) * cellWidth
+                let x = CGFloat(col) * cellWidth + paddingLeft
                 let drawWidth = cell.wide ? cellWidth * 2 : cellWidth
                 let rect = NSRect(x: x, y: y, width: drawWidth, height: cellHeight)
 
@@ -652,7 +691,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     private func drawMarkedText(_ text: String) {
         guard let screen = screen else { return }
         let sbCount = screen.scrollback.count
-        let x = CGFloat(screen.cursorCol) * cellWidth
+        let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
         let y = CGFloat(sbCount + screen.cursorRow) * cellHeight
 
         let attrs: [NSAttributedString.Key: Any] = [
@@ -699,7 +738,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     private func pointToCell(_ pt: NSPoint) -> (row: Int, col: Int) {
         let total = (screen?.scrollback.count ?? 0) + (screen?.rows ?? 0)
         let row = max(0, min(Int(pt.y / cellHeight), total - 1))
-        let col = max(0, min(Int(pt.x / cellWidth), (screen?.cols ?? 1) - 1))
+        let col = max(0, min(Int((pt.x - paddingLeft) / cellWidth), (screen?.cols ?? 1) - 1))
         return (row, col)
     }
 
@@ -742,6 +781,12 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    // MARK: - Cursor
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .iBeam)
     }
 
     // MARK: - Keyboard
@@ -859,6 +904,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let totalLines = screen.scrollback.count + screen.rows
         selStart = (row: 0, col: 0)
         selEnd = (row: totalLines - 1, col: screen.cols - 1)
+        onSelectionChange?((start: selStart!, end: selEnd!))
         needsDisplay = true
     }
 
@@ -887,16 +933,46 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         }
         selStart = pointToCell(convert(event.locationInWindow, from: nil))
         selEnd = nil
+        onSelectionChange?(nil)
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
         selEnd = pointToCell(convert(event.locationInWindow, from: nil))
+        if let s = selStart, let e = selEnd {
+            onSelectionChange?((start: s, end: e))
+        }
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        if selEnd == nil { selStart = nil; needsDisplay = true }
+        if selEnd == nil {
+            selStart = nil
+            onSelectionChange?(nil)
+            needsDisplay = true
+        }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        if selStart != nil, selEnd != nil {
+            // Selection exists → copy
+            copySelection()
+            selStart = nil
+            selEnd = nil
+            onSelectionChange?(nil)
+            needsDisplay = true
+        } else {
+            // No selection → paste
+            if let s = NSPasteboard.general.string(forType: .string) {
+                if screen?.bracketedPasteMode == true {
+                    terminal?.write("\u{1b}[200~")
+                    terminal?.write(s)
+                    terminal?.write("\u{1b}[201~")
+                } else {
+                    terminal?.write(s)
+                }
+            }
+        }
     }
 }
 
@@ -953,7 +1029,7 @@ extension TerminalDrawView: NSTextInputClient {
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         guard let screen = screen, let win = window else { return .zero }
         let sbCount = screen.scrollback.count
-        let x = CGFloat(screen.cursorCol) * cellWidth
+        let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
         let y = CGFloat(sbCount + screen.cursorRow) * cellHeight
         let rectInView = NSRect(x: x, y: y, width: cellWidth, height: cellHeight)
         let rectInWindow = convert(rectInView, to: nil)
@@ -962,6 +1038,34 @@ extension TerminalDrawView: NSTextInputClient {
 
     func characterIndex(for point: NSPoint) -> Int {
         0
+    }
+}
+
+// MARK: - Status Bar
+
+class StatusBarView: NSView {
+    private let label = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(white: 0.08, alpha: 1).cgColor
+
+        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .white.withAlphaComponent(0.5)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(_ text: String) {
+        label.stringValue = text
     }
 }
 

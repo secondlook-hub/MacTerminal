@@ -37,12 +37,15 @@ extension FocusedValues {
 
 struct ContentView: View {
     @EnvironmentObject var bookmarkStore: SSHBookmarkStore
+    @EnvironmentObject var commandStore: CommandStore
     @StateObject private var tabManager = TabManager()
     @EnvironmentObject var updateChecker: UpdateChecker
     @State private var selectedItemID: UUID?
     @State private var showingAddSheet = false
     @State private var editingBookmark: SSHBookmark?
     @State private var targetFolderID: UUID?
+    @State private var showingAddCommandSheet = false
+    @State private var editingCommand: CommandItem?
 
     var body: some View {
         NavigationSplitView {
@@ -51,7 +54,10 @@ struct ContentView: View {
                 showingAddSheet: $showingAddSheet,
                 editingBookmark: $editingBookmark,
                 targetFolderID: $targetFolderID,
-                onConnect: connectToHost
+                showingAddCommandSheet: $showingAddCommandSheet,
+                editingCommand: $editingCommand,
+                onConnect: connectToHost,
+                onRunCommand: runCommand
             )
         } detail: {
             VStack(spacing: 0) {
@@ -83,6 +89,16 @@ struct ContentView: View {
         .sheet(item: $editingBookmark) { bookmark in
             SSHBookmarkEditView(bookmark: bookmark) { updated in
                 bookmarkStore.update(updated)
+            }
+        }
+        .sheet(isPresented: $showingAddCommandSheet) {
+            CommandEditView(command: nil) { newCommand in
+                commandStore.add(newCommand)
+            }
+        }
+        .sheet(item: $editingCommand) { command in
+            CommandEditView(command: command) { updated in
+                commandStore.update(updated)
             }
         }
         .task {
@@ -126,5 +142,10 @@ struct ContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             tab.terminal.write(cmd)
         }
+    }
+
+    private func runCommand(_ command: CommandItem) {
+        guard let tab = tabManager.selectedTab else { return }
+        tab.terminal.write(command.command)
     }
 }
