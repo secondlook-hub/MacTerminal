@@ -139,7 +139,7 @@ struct MacTerminalApp: App {
                         Self.updateAllLineNumberVisibility(newValue)
                     }
                 ))
-                Toggle("Timestamp", isOn: Binding(
+                Toggle("Show Timestamp", isOn: Binding(
                     get: { showTimestamp },
                     set: { newValue in
                         showTimestamp = newValue

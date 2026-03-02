@@ -23,6 +23,7 @@ struct SidebarView: View {
     @State private var renameFolderName: String = ""
     @State private var draggedItemID: UUID?
     @State private var selectedCommandID: UUID?
+    @State private var expandedFolderIDs: Set<UUID> = Self.loadExpandedFolders()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,28 +70,17 @@ struct SidebarView: View {
 
     private var connectionsTab: some View {
         List {
-            OutlineGroup(bookmarkStore.rootItems, children: \.children) { item in
-                SidebarItemRow(item: item)
-                    .tag(item.id)
-                    .listRowBackground(rowBackground(for: item.id))
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedItemID = item.id }
-                    .onDrag {
-                        draggedItemID = item.id
-                        return NSItemProvider(object: item.id.uuidString as NSString)
-                    }
-                    .onDrop(of: [.plainText], delegate: SidebarDropDelegate(
-                        targetItem: item,
-                        bookmarkStore: bookmarkStore,
-                        draggedItemID: $draggedItemID
-                    ))
-                    .contextMenu {
-                        if item.isFolder {
-                            folderContextMenu(item)
-                        } else if let bm = item.bookmark {
-                            bookmarkContextMenu(bm)
-                        }
-                    }
+            ForEach(bookmarkStore.rootItems) { item in
+                SidebarTreeItemView(
+                    item: item,
+                    selectedItemID: $selectedItemID,
+                    draggedItemID: $draggedItemID,
+                    expandedFolderIDs: $expandedFolderIDs,
+                    bookmarkStore: bookmarkStore,
+                    folderContextMenu: { folderContextMenu($0) },
+                    bookmarkContextMenu: { bookmarkContextMenu($0) },
+                    saveExpanded: { Self.saveExpandedFolders($0) }
+                )
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -104,6 +94,15 @@ struct SidebarView: View {
                 .padding()
             }
         }
+    }
+
+    private static func loadExpandedFolders() -> Set<UUID> {
+        guard let strings = UserDefaults.standard.stringArray(forKey: "expandedFolderIDs") else { return [] }
+        return Set(strings.compactMap { UUID(uuidString: $0) })
+    }
+
+    private static func saveExpandedFolders(_ ids: Set<UUID>) {
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: "expandedFolderIDs")
     }
 
     // MARK: - Commands Tab
@@ -330,6 +329,81 @@ struct CommandRow: View {
             Spacer()
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Sidebar Tree Item (Recursive)
+
+struct SidebarTreeItemView<FolderMenu: View, BookmarkMenu: View>: View {
+    let item: SidebarItem
+    @Binding var selectedItemID: UUID?
+    @Binding var draggedItemID: UUID?
+    @Binding var expandedFolderIDs: Set<UUID>
+    let bookmarkStore: SSHBookmarkStore
+    let folderContextMenu: (SidebarItem) -> FolderMenu
+    let bookmarkContextMenu: (SSHBookmark) -> BookmarkMenu
+    let saveExpanded: (Set<UUID>) -> Void
+
+    var body: some View {
+        if item.isFolder {
+            DisclosureGroup(isExpanded: folderBinding) {
+                if let children = item.children {
+                    ForEach(children) { child in
+                        SidebarTreeItemView(
+                            item: child,
+                            selectedItemID: $selectedItemID,
+                            draggedItemID: $draggedItemID,
+                            expandedFolderIDs: $expandedFolderIDs,
+                            bookmarkStore: bookmarkStore,
+                            folderContextMenu: folderContextMenu,
+                            bookmarkContextMenu: bookmarkContextMenu,
+                            saveExpanded: saveExpanded
+                        )
+                    }
+                }
+            } label: {
+                rowContent
+            }
+        } else {
+            rowContent
+        }
+    }
+
+    private var folderBinding: Binding<Bool> {
+        Binding(
+            get: { expandedFolderIDs.contains(item.id) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedFolderIDs.insert(item.id)
+                } else {
+                    expandedFolderIDs.remove(item.id)
+                }
+                saveExpanded(expandedFolderIDs)
+            }
+        )
+    }
+
+    private var rowContent: some View {
+        SidebarItemRow(item: item)
+            .tag(item.id)
+            .contentShape(Rectangle())
+            .onTapGesture { selectedItemID = item.id }
+            .onDrag {
+                draggedItemID = item.id
+                return NSItemProvider(object: item.id.uuidString as NSString)
+            }
+            .onDrop(of: [.plainText], delegate: SidebarDropDelegate(
+                targetItem: item,
+                bookmarkStore: bookmarkStore,
+                draggedItemID: $draggedItemID
+            ))
+            .contextMenu {
+                if item.isFolder {
+                    folderContextMenu(item)
+                } else if let bm = item.bookmark {
+                    bookmarkContextMenu(bm)
+                }
+            }
     }
 }
 

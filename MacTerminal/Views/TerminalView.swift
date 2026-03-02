@@ -542,7 +542,8 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         ]) as? [URL] else { return false }
 
         let paths = items.map { path in
-            path.path.contains(" ") ? "\"\(path.path)\"" : path.path
+            let p = path.path.precomposedStringWithCanonicalMapping
+            return p.contains(" ") ? "\"\(p)\"" : p
         }
         terminal?.write(paths.joined(separator: " "))
         return true
@@ -616,6 +617,41 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
         UserDefaults.standard.set(newFont.fontName, forKey: "terminalFontName")
         UserDefaults.standard.set(Double(newFont.pointSize), forKey: "terminalFontSize")
+
+        updateLineNumberLayout()
+        updateTimestampLayout()
+        triggerRelayout()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            let delta = event.deltaY
+            guard abs(delta) > 0.1 else { return }
+            let currentSize = defaultFont.pointSize
+            let newSize = max(8, min(72, currentSize + (delta > 0 ? -1 : 1)))
+            guard newSize != currentSize else { return }
+            applyFontSize(newSize)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
+    private func applyFontSize(_ size: CGFloat) {
+        if let name = UserDefaults.standard.string(forKey: "terminalFontName"),
+           let f = NSFont(name: name, size: size) {
+            defaultFont = f
+            boldFont = NSFontManager.shared.convert(f, toHaveTrait: .boldFontMask)
+        } else {
+            defaultFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+            boldFont = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
+        }
+        let measure = ("W" as NSString).size(withAttributes: [.font: defaultFont])
+        cellWidth = ceil(measure.width)
+        cellHeight = ceil(measure.height)
+        paddingBottom = cellHeight
+
+        UserDefaults.standard.set(defaultFont.fontName, forKey: "terminalFontName")
+        UserDefaults.standard.set(Double(size), forKey: "terminalFontSize")
 
         updateLineNumberLayout()
         updateTimestampLayout()
@@ -1015,7 +1051,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 if selStart != nil, selEnd != nil { copySelection(); return true }
                 return false
             case "v":
-                if let s = NSPasteboard.general.string(forType: .string) {
+                if let s = NSPasteboard.general.string(forType: .string)?.precomposedStringWithCanonicalMapping {
                     if screen?.bracketedPasteMode == true {
                         terminal?.write("\u{1b}[200~")
                         terminal?.write(s)
@@ -1051,7 +1087,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     }
 
     @objc func paste(_ sender: Any?) {
-        if let s = NSPasteboard.general.string(forType: .string) {
+        if let s = NSPasteboard.general.string(forType: .string)?.precomposedStringWithCanonicalMapping {
             if screen?.bracketedPasteMode == true {
                 terminal?.write("\u{1b}[200~")
                 terminal?.write(s)
@@ -1126,7 +1162,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             needsDisplay = true
         } else {
             // No selection → paste
-            if let s = NSPasteboard.general.string(forType: .string) {
+            if let s = NSPasteboard.general.string(forType: .string)?.precomposedStringWithCanonicalMapping {
                 if screen?.bracketedPasteMode == true {
                     terminal?.write("\u{1b}[200~")
                     terminal?.write(s)
