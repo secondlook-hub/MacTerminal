@@ -35,6 +35,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Multi-Window** — Detachable terminal windows with full terminal updates in detached windows
 - **Clean Shell Exit** — `exit` command properly terminates shell and all child processes without freezing
 - **Process Group Cleanup** — Tab close kills entire process group (shell + SSH + child processes)
+- **Hidden Input Protection** — Non-echoed input (passwords, etc.) is not displayed in tab titles
 - **Working Directory** — Starts in home directory; new tabs inherit current directory
 - **Auto Update** — Checks for new releases via GitHub Releases API
 

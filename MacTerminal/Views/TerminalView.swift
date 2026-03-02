@@ -1045,7 +1045,18 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         switch event.keyCode {
         case 36:
             let cmd = screen?.inputBuffer.trimmingCharacters(in: .whitespaces) ?? ""
-            if !cmd.isEmpty { screen?.onCommandEntered?(cmd) }
+            if !cmd.isEmpty, let screen = screen {
+                // Only show in tab if the input was echoed on screen
+                // (prevents hidden input like passwords from appearing)
+                let row = screen.grid[screen.cursorRow]
+                var lineText = ""
+                for c in 0..<min(screen.cursorCol, row.count) {
+                    lineText.append(row[c].char)
+                }
+                if lineText.contains(cmd) {
+                    screen.onCommandEntered?(cmd)
+                }
+            }
             screen?.inputBuffer = ""
             terminal?.write("\r")
         case 51:
