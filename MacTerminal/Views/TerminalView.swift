@@ -1125,6 +1125,19 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         onFocused?()
+
+        if event.clickCount == 2 {
+            let cell = pointToCell(convert(event.locationInWindow, from: nil))
+            if let range = findWordRange(at: cell) {
+                selectionMode = .line
+                selStart = (row: cell.row, col: range.start)
+                selEnd = (row: cell.row, col: range.end)
+                onSelectionChange?((start: selStart!, end: selEnd!))
+                needsDisplay = true
+                return
+            }
+        }
+
         if event.modifierFlags.contains(.command) {
             selectionMode = .block
         } else {
@@ -1134,6 +1147,64 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         selEnd = nil
         onSelectionChange?(nil)
         needsDisplay = true
+    }
+
+    private func findWordRange(at cell: (row: Int, col: Int)) -> (start: Int, end: Int)? {
+        guard let screen = screen else { return nil }
+        let sbCount = screen.scrollback.count
+        let cells: [TerminalScreen.Cell]
+        if cell.row < sbCount {
+            cells = screen.scrollback[cell.row]
+        } else {
+            let sr = cell.row - sbCount
+            guard sr >= 0, sr < screen.rows else { return nil }
+            cells = screen.grid[sr]
+        }
+        let cols = screen.cols
+        guard cell.col >= 0, cell.col < cols else { return nil }
+
+        // If clicked on a space, no selection
+        if cells[cell.col].char == " " { return nil }
+
+        // Scan left: find boundary (2+ consecutive spaces or line start)
+        var start = cell.col
+        while start > 0 {
+            if start >= 2 && cells[start - 1].char == " " && cells[start - 2].char == " " {
+                break
+            }
+            if start >= 1 && cells[start - 1].char == " " {
+                // Check if this single space is part of 2+ spaces
+                if start >= 2 && cells[start - 2].char == " " {
+                    break
+                }
+                // Single space — include it in selection, keep scanning
+                start -= 1
+            } else {
+                start -= 1
+            }
+        }
+
+        // Scan right: find boundary (2+ consecutive spaces or line end)
+        var end = cell.col
+        while end < cols - 1 {
+            if end + 2 < cols && cells[end + 1].char == " " && cells[end + 2].char == " " {
+                break
+            }
+            if end + 1 < cols && cells[end + 1].char == " " {
+                if end + 2 < cols && cells[end + 2].char == " " {
+                    break
+                }
+                end += 1
+            } else {
+                end += 1
+            }
+        }
+
+        // Trim leading/trailing single spaces from selection
+        while start < end && cells[start].char == " " { start += 1 }
+        while end > start && cells[end].char == " " { end -= 1 }
+
+        return (start: start, end: end)
     }
 
     override func mouseDragged(with event: NSEvent) {

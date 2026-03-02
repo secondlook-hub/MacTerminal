@@ -23,6 +23,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Folder State Persistence** — Sidebar folder expanded/collapsed state remembered across restarts
 - **Font Zoom** — Cmd + Mouse Wheel to resize terminal font instantly (8pt–72pt)
 - **NFC Normalization** — File drag & drop and clipboard paste use NFC Unicode form (fixes Korean filenames)
+- **Smart Double-Click** — Double-click selects text between 2+ consecutive spaces (selects phrases, not just words)
 - **Status Bar** — Bottom bar showing logical line number (Ln) and column (Col) with selection range
 - **Drag & Drop** — Reorder bookmarks and move them between folders
 - **Find** — In-terminal search with next/previous navigation (Cmd+F)
