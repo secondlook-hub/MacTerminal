@@ -32,7 +32,9 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Save Output** — Export terminal content to file (Cmd+S)
 - **Customization** — Configurable font, background color, and text color
 - **Block Selection** — Toggle block selection mode for text
-- **Multi-Window** — Detachable terminal windows
+- **Multi-Window** — Detachable terminal windows with full terminal updates in detached windows
+- **Clean Shell Exit** — `exit` command properly terminates shell and all child processes without freezing
+- **Process Group Cleanup** — Tab close kills entire process group (shell + SSH + child processes)
 - **Working Directory** — Starts in home directory; new tabs inherit current directory
 - **Auto Update** — Checks for new releases via GitHub Releases API
 

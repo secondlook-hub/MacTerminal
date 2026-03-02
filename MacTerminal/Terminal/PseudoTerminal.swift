@@ -94,8 +94,12 @@ class PseudoTerminal: ObservableObject {
                         self.onOutput?(complete)
                     }
                 }
-            } else if n <= 0 {
+            } else if n == 0 || (n < 0 && errno != EINTR) {
+                // EOF or error — shell exited.
+                // Stop on main thread to cancel readSource and prevent re-firing.
                 DispatchQueue.main.async {
+                    guard self.isRunning else { return }
+                    self.stop()
                     self.onProcessExit?()
                 }
             }
@@ -173,14 +177,37 @@ class PseudoTerminal: ObservableObject {
     }
 
     func stop() {
-        readSource?.cancel()
+        let source = readSource
         readSource = nil
         utf8Remainder = Data()
-        if childPID > 0 {
-            kill(childPID, SIGHUP)
-            var status: Int32 = 0
-            waitpid(childPID, &status, WNOHANG)
-            childPID = -1
+
+        let pid = childPID
+        let fd = masterFD
+        childPID = -1
+        masterFD = -1
+
+        source?.cancel()
+
+        // Close master FD to send EOF to slave side
+        if fd >= 0 {
+            close(fd)
+        }
+
+        if pid > 0 {
+            // Kill entire process group (shell + all child processes)
+            kill(-pid, SIGHUP)
+            kill(-pid, SIGTERM)
+
+            // Reap zombie process on background queue
+            DispatchQueue.global(qos: .utility).async {
+                var status: Int32 = 0
+                let result = waitpid(pid, &status, WNOHANG)
+                if result == 0 {
+                    usleep(100_000) // 100ms grace period
+                    kill(-pid, SIGKILL)
+                    waitpid(pid, &status, 0)
+                }
+            }
         }
     }
 

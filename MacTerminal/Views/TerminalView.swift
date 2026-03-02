@@ -139,6 +139,7 @@ class TerminalContainerView: NSView {
     private(set) var isFindBarVisible = false
     var textWrap = UserDefaults.standard.object(forKey: "textWrap") == nil ? true : UserDefaults.standard.bool(forKey: "textWrap")
     var onFocused: (() -> Void)?
+    private(set) weak var currentPane: TerminalPane?
 
     init(terminal: PseudoTerminal, screen: TerminalScreen) {
         self.terminal = terminal
@@ -322,8 +323,22 @@ class TerminalContainerView: NSView {
 
     /// Connect this container's display refresh to a TerminalPane's data pipeline.
     func bindToPane(_ pane: TerminalPane) {
+        currentPane = pane
         pane.onScreenUpdate = { [weak self] in
             self?.refreshDisplay()
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Re-bind when this container is added to a (new) window.
+        // This ensures onScreenUpdate points to the live container after
+        // detach/reattach, where the old container may have overwritten it.
+        if window != nil, let pane = currentPane {
+            pane.onScreenUpdate = { [weak self] in
+                self?.refreshDisplay()
+            }
+            refreshDisplay()
         }
     }
 

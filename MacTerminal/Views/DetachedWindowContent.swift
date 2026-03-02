@@ -21,7 +21,13 @@ struct DetachedWindowContent: View {
         .focusedSceneValue(\.tabManager, tabManager)
         .onReceive(tabManager.$tabs) { tabs in
             if tabs.isEmpty {
-                WindowManager.shared.closeDetachedWindow(for: tabManager.id)
+                // Defer to next RunLoop iteration to avoid race condition:
+                // @Published fires on willSet (before value is stored), so during
+                // transferTab's takeTab(), the stored tabs still contains the tab.
+                // Calling closeDetachedWindow synchronously would stop the terminal.
+                DispatchQueue.main.async {
+                    WindowManager.shared.closeDetachedWindow(for: tabManager.id)
+                }
             }
         }
     }
