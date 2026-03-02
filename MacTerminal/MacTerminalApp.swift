@@ -13,6 +13,7 @@ struct MacTerminalApp: App {
     @AppStorage("blockSelectionMode") var blockSelectionMode = false
     @AppStorage("showLineNumber") var showLineNumber = false
     @AppStorage("showTimestamp") var showTimestamp = false
+    @AppStorage("textWrap") var textWrap = true
 
     init() {
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -146,6 +147,13 @@ struct MacTerminalApp: App {
                         Self.updateAllTimestampVisibility(newValue)
                     }
                 ))
+                Toggle("Text Wrap", isOn: Binding(
+                    get: { textWrap },
+                    set: { newValue in
+                        textWrap = newValue
+                        Self.updateAllTextWrap(newValue)
+                    }
+                ))
                 Divider()
                 Button("Change Font...") {
                     Self.findDrawView()?.showFontPanel(nil)
@@ -172,6 +180,15 @@ struct MacTerminalApp: App {
     private static func findContainerView() -> TerminalContainerView? {
         guard let view = NSApp.keyWindow?.contentView else { return nil }
         return findSubview(in: view)
+    }
+
+    private static func updateAllTextWrap(_ enabled: Bool) {
+        for window in NSApp.windows {
+            guard let contentView = window.contentView else { continue }
+            findAllSubviews(of: TerminalContainerView.self, in: contentView).forEach {
+                $0.setTextWrap(enabled)
+            }
+        }
     }
 
     private static func updateAllLineNumberVisibility(_ visible: Bool) {

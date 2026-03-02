@@ -137,6 +137,7 @@ class TerminalContainerView: NSView {
     private var findBarTop: NSLayoutConstraint!
     private var scrollViewTop: NSLayoutConstraint!
     private(set) var isFindBarVisible = false
+    var textWrap = UserDefaults.standard.object(forKey: "textWrap") == nil ? true : UserDefaults.standard.bool(forKey: "textWrap")
     var onFocused: (() -> Void)?
 
     init(terminal: PseudoTerminal, screen: TerminalScreen) {
@@ -171,6 +172,7 @@ class TerminalContainerView: NSView {
         ])
 
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = !textWrap
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = drawView.bgColor
@@ -329,7 +331,13 @@ class TerminalContainerView: NSView {
         let totalLines = screen.scrollback.count + screen.rows
         let contentHeight = CGFloat(totalLines) * drawView.cellHeight + drawView.paddingBottom
         let height = max(contentHeight, scrollView.contentSize.height)
-        let width = scrollView.contentSize.width
+        let width: CGFloat
+        if textWrap {
+            width = scrollView.contentSize.width
+        } else {
+            let contentWidth = drawView.paddingLeft + CGFloat(screen.cols) * drawView.cellWidth + drawView.timestampWidth
+            width = max(contentWidth, scrollView.contentSize.width)
+        }
 
         drawView.frame = NSRect(x: 0, y: 0, width: width, height: height)
         drawView.needsDisplay = true
@@ -348,8 +356,13 @@ class TerminalContainerView: NSView {
         guard bounds.width > 0, bounds.height > 0 else { return }
 
         let availableHeight = bounds.height - Self.statusBarHeight
-        let availableWidth = bounds.width - drawView.paddingLeft - drawView.timestampWidth
-        let cols = max(Int(availableWidth / drawView.cellWidth), 20)
+        let cols: Int
+        if textWrap {
+            let availableWidth = bounds.width - drawView.paddingLeft - drawView.timestampWidth
+            cols = max(Int(availableWidth / drawView.cellWidth), 20)
+        } else {
+            cols = 10000
+        }
         let rows = max(Int((availableHeight - drawView.paddingBottom) / drawView.cellHeight), 5)
 
         if cols != lastCols || rows != lastRows {
@@ -358,6 +371,15 @@ class TerminalContainerView: NSView {
             terminal.resize(cols: UInt16(cols), rows: UInt16(rows))
             refreshDisplay()
         }
+    }
+
+    func setTextWrap(_ enabled: Bool) {
+        textWrap = enabled
+        UserDefaults.standard.set(enabled, forKey: "textWrap")
+        scrollView.hasHorizontalScroller = !enabled
+        lastCols = 0; lastRows = 0
+        layout()
+        refreshDisplay()
     }
 
     override var acceptsFirstResponder: Bool { true }
