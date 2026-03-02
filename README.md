@@ -17,9 +17,12 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Background Tab Updates** — Tabs continue processing data even when not focused, with blink indicator for unread output
 - **Themes** — Dark, Gray, and Light themes with sidebar support (View > Theme)
 - **Line Numbers** — Toggle line numbers on the left side (View > Show Line Number)
-- **Timestamps** — Per-line timestamps on the right side (View > Timestamp)
+- **Timestamps** — Per-line timestamps on the right side (View > Show Timestamp)
 - **Logical Line Tracking** — Wrapped lines are treated as a single logical line for line numbers and timestamps
 - **Settings Export/Import** — Export and import connections, commands, theme, and color settings (File > Settings)
+- **Folder State Persistence** — Sidebar folder expanded/collapsed state remembered across restarts
+- **Font Zoom** — Cmd + Mouse Wheel to resize terminal font instantly (8pt–72pt)
+- **NFC Normalization** — File drag & drop and clipboard paste use NFC Unicode form (fixes Korean filenames)
 - **Status Bar** — Bottom bar showing logical line number (Ln) and column (Col) with selection range
 - **Drag & Drop** — Reorder bookmarks and move them between folders
 - **Find** — In-terminal search with next/previous navigation (Cmd+F)
@@ -62,6 +65,7 @@ Requires **Xcode 15+** and **macOS 13.0 Ventura** or later.
 | Cmd+K | Clear Scrollback |
 | Cmd+C | Copy (with selection) |
 | Cmd+V | Paste |
+| Cmd+Scroll | Font Zoom In/Out |
 | Right-Click | Copy selection / Paste (no selection) |
 
 ## Project Structure
