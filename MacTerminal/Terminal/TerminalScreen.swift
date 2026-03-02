@@ -19,6 +19,10 @@ class TerminalScreen {
     var cols: Int
     var grid: [[Cell]]
     var scrollback: [[Cell]] = []
+    var scrollbackTimestamps: [Date] = []
+    var gridTimestamps: [Date] = []
+    var scrollbackWrapped: [Bool] = []
+    var gridWrapped: [Bool] = []
     static let maxScrollback = 5000
 
     var cursorRow = 0
@@ -49,6 +53,10 @@ class TerminalScreen {
     // Alternate screen buffer
     private var savedMainGrid: [[Cell]]?
     private var savedMainScrollback: [[Cell]]?
+    private var savedMainGridTimestamps: [Date]?
+    private var savedMainScrollbackTimestamps: [Date]?
+    private var savedMainGridWrapped: [Bool]?
+    private var savedMainScrollbackWrapped: [Bool]?
     private var savedMainCursorRow = 0
     private var savedMainCursorCol = 0
 
@@ -125,6 +133,8 @@ class TerminalScreen {
         self.cols = cols
         self.scrollBottom = rows - 1
         self.grid = Self.emptyGrid(rows: rows, cols: cols)
+        self.gridTimestamps = Array(repeating: Date(), count: rows)
+        self.gridWrapped = Array(repeating: false, count: rows)
     }
 
     static func emptyGrid(rows: Int, cols: Int) -> [[Cell]] {
@@ -240,15 +250,16 @@ class TerminalScreen {
         if w && cursorCol == cols - 1 {
             // Fill current cell with space and wrap
             grid[cursorRow][cursorCol] = Cell()
-            if autoWrap { cursorCol = 0; lineFeed() }
+            if autoWrap { cursorCol = 0; lineFeed(); gridWrapped[cursorRow] = true }
             else { return }
         }
 
         if cursorCol >= cols {
-            if autoWrap { cursorCol = 0; lineFeed() }
+            if autoWrap { cursorCol = 0; lineFeed(); gridWrapped[cursorRow] = true }
             else { cursorCol = cols - 1 }
         }
         guard cursorRow >= 0, cursorRow < rows, cursorCol >= 0, cursorCol < cols else { return }
+        gridTimestamps[cursorRow] = Date()
 
         // If overwriting a wide char's padding cell, clear the first cell too
         if grid[cursorRow][cursorCol].widePadding && cursorCol > 0 {
@@ -326,17 +337,33 @@ class TerminalScreen {
     private func scrollUp() {
         if savedMainGrid == nil {
             scrollback.append(grid[scrollTop])
+            scrollbackTimestamps.append(gridTimestamps[scrollTop])
+            scrollbackWrapped.append(gridWrapped[scrollTop])
             if scrollback.count > Self.maxScrollback {
                 scrollback.removeFirst(scrollback.count - Self.maxScrollback)
+                scrollbackTimestamps.removeFirst(scrollbackTimestamps.count - Self.maxScrollback)
+                scrollbackWrapped.removeFirst(scrollbackWrapped.count - Self.maxScrollback)
             }
         }
-        for r in scrollTop..<scrollBottom { grid[r] = grid[r + 1] }
+        for r in scrollTop..<scrollBottom {
+            grid[r] = grid[r + 1]
+            gridTimestamps[r] = gridTimestamps[r + 1]
+            gridWrapped[r] = gridWrapped[r + 1]
+        }
         grid[scrollBottom] = Array(repeating: Cell(), count: cols)
+        gridTimestamps[scrollBottom] = Date()
+        gridWrapped[scrollBottom] = false
     }
 
     private func scrollDown() {
-        for r in stride(from: scrollBottom, to: scrollTop, by: -1) { grid[r] = grid[r - 1] }
+        for r in stride(from: scrollBottom, to: scrollTop, by: -1) {
+            grid[r] = grid[r - 1]
+            gridTimestamps[r] = gridTimestamps[r - 1]
+            gridWrapped[r] = gridWrapped[r - 1]
+        }
         grid[scrollTop] = Array(repeating: Cell(), count: cols)
+        gridTimestamps[scrollTop] = Date()
+        gridWrapped[scrollTop] = false
     }
 
     private func scrollUpN(_ n: Int) {
@@ -495,10 +522,18 @@ class TerminalScreen {
         guard savedMainGrid == nil else { return }
         savedMainGrid = grid
         savedMainScrollback = scrollback
+        savedMainGridTimestamps = gridTimestamps
+        savedMainScrollbackTimestamps = scrollbackTimestamps
+        savedMainGridWrapped = gridWrapped
+        savedMainScrollbackWrapped = scrollbackWrapped
         savedMainCursorRow = cursorRow
         savedMainCursorCol = cursorCol
         grid = Self.emptyGrid(rows: rows, cols: cols)
+        gridTimestamps = Array(repeating: Date(), count: rows)
+        gridWrapped = Array(repeating: false, count: rows)
         scrollback = []
+        scrollbackTimestamps = []
+        scrollbackWrapped = []
         cursorRow = 0; cursorCol = 0
         scrollTop = 0; scrollBottom = rows - 1
     }
@@ -507,9 +542,15 @@ class TerminalScreen {
         guard let saved = savedMainGrid else { return }
         grid = saved
         scrollback = savedMainScrollback ?? []
+        gridTimestamps = savedMainGridTimestamps ?? Array(repeating: Date(), count: rows)
+        scrollbackTimestamps = savedMainScrollbackTimestamps ?? []
+        gridWrapped = savedMainGridWrapped ?? Array(repeating: false, count: rows)
+        scrollbackWrapped = savedMainScrollbackWrapped ?? []
         cursorRow = savedMainCursorRow
         cursorCol = savedMainCursorCol
         savedMainGrid = nil; savedMainScrollback = nil
+        savedMainGridTimestamps = nil; savedMainScrollbackTimestamps = nil
+        savedMainGridWrapped = nil; savedMainScrollbackWrapped = nil
         scrollTop = 0; scrollBottom = rows - 1
     }
 
@@ -528,7 +569,10 @@ class TerminalScreen {
         case 3:
             // Erase display + clear scrollback
             for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
+            gridWrapped = Array(repeating: false, count: rows)
             scrollback.removeAll()
+            scrollbackTimestamps.removeAll()
+            scrollbackWrapped.removeAll()
         default: break
         }
     }
@@ -545,14 +589,18 @@ class TerminalScreen {
     private func insertLines(_ n: Int) {
         for _ in 0..<min(n, scrollBottom - cursorRow + 1) {
             grid.remove(at: min(scrollBottom, grid.count - 1))
+            gridWrapped.remove(at: min(scrollBottom, gridWrapped.count - 1))
             grid.insert(Array(repeating: Cell(), count: cols), at: cursorRow)
+            gridWrapped.insert(false, at: cursorRow)
         }
     }
 
     private func deleteLines(_ n: Int) {
         for _ in 0..<min(n, scrollBottom - cursorRow + 1) {
             grid.remove(at: cursorRow)
+            gridWrapped.remove(at: cursorRow)
             grid.insert(Array(repeating: Cell(), count: cols), at: min(scrollBottom, grid.count - 1))
+            gridWrapped.insert(false, at: min(scrollBottom, gridWrapped.count - 1))
         }
     }
 
@@ -645,7 +693,10 @@ class TerminalScreen {
         currentUnderline = false; currentStrikethrough = false; currentInvisible = false
         applicationCursorKeys = false; showCursor = true; autoWrap = true
         bracketedPasteMode = false; insertMode = false
+        let now = Date()
         for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
+        gridTimestamps = Array(repeating: now, count: rows)
+        gridWrapped = Array(repeating: false, count: rows)
     }
 
     func resize(newRows: Int, newCols: Int) {
@@ -654,7 +705,14 @@ class TerminalScreen {
         for r in 0..<min(rows, newRows) {
             for c in 0..<min(cols, newCols) { newGrid[r][c] = grid[r][c] }
         }
-        grid = newGrid; rows = newRows; cols = newCols
+        var newTimestamps = Array(repeating: Date(), count: newRows)
+        var newWrapped = Array(repeating: false, count: newRows)
+        for r in 0..<min(rows, newRows) {
+            newTimestamps[r] = gridTimestamps[r]
+            newWrapped[r] = gridWrapped[r]
+        }
+        grid = newGrid; gridTimestamps = newTimestamps; gridWrapped = newWrapped
+        rows = newRows; cols = newCols
         scrollTop = 0; scrollBottom = rows - 1
         cursorRow = min(cursorRow, rows - 1)
         cursorCol = min(cursorCol, cols - 1)

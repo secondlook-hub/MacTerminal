@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DetachedWindowContent: View {
     @ObservedObject var tabManager: TabManager
+    @ObservedObject private var themeManager = ThemeManager.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,6 +14,7 @@ struct DetachedWindowContent: View {
                 Color(nsColor: .terminalBG)
             }
         }
+        .preferredColorScheme(themeManager.colorScheme)
         .focusedSceneValue(\.terminalScreen, tabManager.selectedTab?.screen)
         .focusedSceneValue(\.terminalTab, tabManager.selectedTab)
         .focusedSceneValue(\.isRecording, tabManager.selectedTab?.isRecording ?? false)

@@ -15,7 +15,12 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Commands** — Save frequently used commands and double-click to auto-input into terminal
 - **Right-Click Copy/Paste** — Right-click to copy selection or paste if no selection
 - **Background Tab Updates** — Tabs continue processing data even when not focused, with blink indicator for unread output
-- **Status Bar** — Bottom bar showing cursor position (Ln, Col) and selection range
+- **Themes** — Dark, Gray, and Light themes with sidebar support (View > Theme)
+- **Line Numbers** — Toggle line numbers on the left side (View > Show Line Number)
+- **Timestamps** — Per-line timestamps on the right side (View > Timestamp)
+- **Logical Line Tracking** — Wrapped lines are treated as a single logical line for line numbers and timestamps
+- **Settings Export/Import** — Export and import connections, commands, theme, and color settings (File > Settings)
+- **Status Bar** — Bottom bar showing logical line number (Ln) and column (Col) with selection range
 - **Drag & Drop** — Reorder bookmarks and move them between folders
 - **Find** — In-terminal search with next/previous navigation (Cmd+F)
 - **Recording** — Record terminal sessions to text files
@@ -71,6 +76,8 @@ MacTerminal/
 │   ├── SSHBookmarkStore.swift    # Tree-based bookmark persistence
 │   ├── SidebarItem.swift         # Tree node (folder / bookmark leaf)
 │   ├── CommandItem.swift         # Saved commands model & persistence
+│   ├── ThemeManager.swift        # Theme management (Dark/Gray/Light)
+│   ├── SettingsExporter.swift    # Settings export/import
 │   ├── TerminalTab.swift         # Tab & split pane state management
 │   ├── UpdateChecker.swift       # GitHub Releases update checker
 │   └── WindowManager.swift       # Multi-window tracking

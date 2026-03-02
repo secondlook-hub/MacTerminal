@@ -30,6 +30,7 @@ class FindBarView: NSView, NSSearchFieldDelegate {
     private let nextButton = NSButton()
     private let countLabel = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
+    private var themeObserver: NSObjectProtocol?
 
     var onSearch: ((String) -> Void)?
     var onNext: (() -> Void)?
@@ -39,7 +40,13 @@ class FindBarView: NSView, NSSearchFieldDelegate {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(white: 0.15, alpha: 1).cgColor
+        layer?.backgroundColor = ThemeManager.shared.findBarBG.cgColor
+
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.themeDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.layer?.backgroundColor = ThemeManager.shared.findBarBG.cgColor
+        }
 
         searchField.placeholderString = "Find..."
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -91,6 +98,7 @@ class FindBarView: NSView, NSSearchFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { if let o = themeObserver { NotificationCenter.default.removeObserver(o) } }
 
     func updateCount(current: Int, total: Int) {
         countLabel.stringValue = total > 0 ? "\(current)/\(total)" : "No results"
@@ -198,9 +206,19 @@ class TerminalContainerView: NSView {
     }
 
     func updateStatusBar(selection: (start: (row: Int, col: Int), end: (row: Int, col: Int))? = nil) {
-        let ln = screen.cursorRow + 1
+        var logicalLine = 0
+        for i in 0..<screen.scrollback.count {
+            if i >= screen.scrollbackWrapped.count || !screen.scrollbackWrapped[i] {
+                logicalLine += 1
+            }
+        }
+        for r in 0...screen.cursorRow {
+            if r >= screen.gridWrapped.count || !screen.gridWrapped[r] {
+                logicalLine += 1
+            }
+        }
         let col = screen.cursorCol + 1
-        var text = "Ln \(ln), Col \(col)"
+        var text = "Ln \(logicalLine), Col \(col)"
         if let sel = selection {
             let s = sel.start
             let e = sel.end
@@ -330,7 +348,8 @@ class TerminalContainerView: NSView {
         guard bounds.width > 0, bounds.height > 0 else { return }
 
         let availableHeight = bounds.height - Self.statusBarHeight
-        let cols = max(Int((bounds.width - drawView.paddingLeft) / drawView.cellWidth), 20)
+        let availableWidth = bounds.width - drawView.paddingLeft - drawView.timestampWidth
+        let cols = max(Int(availableWidth / drawView.cellWidth), 20)
         let rows = max(Int((availableHeight - drawView.paddingBottom) / drawView.cellHeight), 5)
 
         if cols != lastCols || rows != lastRows {
@@ -359,10 +378,20 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
     var cellWidth: CGFloat
     var cellHeight: CGFloat
-    let paddingLeft: CGFloat = 4
+    static let basePaddingLeft: CGFloat = 4
+    var paddingLeft: CGFloat = 4
     var paddingBottom: CGFloat  // one line height, set after cellHeight
     var defaultFont: NSFont
     var boldFont: NSFont
+    var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
+    private(set) var timestampWidth: CGFloat = 0
+    private lazy var timestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+    var showLineNumber = UserDefaults.standard.bool(forKey: "showLineNumber")
+    private(set) var lineNumberWidth: CGFloat = 0
 
     // Appearance
     var bgColor: NSColor
@@ -383,6 +412,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     // Cursor blink
     private var cursorOn = true
     private var blinkTimer: Timer?
+    private var themeObserver: NSObjectProtocol?
 
     // IME composition
     private var markedString: String?
@@ -415,14 +445,87 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         cellWidth = ceil(measure.width)
         cellHeight = ceil(measure.height)
         paddingBottom = cellHeight
-        bgColor = Self.loadColor(forKey: "terminalBGColor") ?? NSColor.terminalBG
-        fgColor = Self.loadColor(forKey: "terminalFGColor") ?? TerminalScreen.defaultFG
+        bgColor = Self.loadColor(forKey: "terminalBGColor") ?? ThemeManager.shared.terminalBG
+        fgColor = Self.loadColor(forKey: "terminalFGColor") ?? ThemeManager.shared.terminalFG
         super.init(frame: frame)
+        updateLineNumberLayout()
+        updateTimestampLayout()
+
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.themeDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.applyTheme() }
     }
 
     convenience init() { self.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
-    deinit { blinkTimer?.invalidate() }
+    deinit {
+        blinkTimer?.invalidate()
+        if let o = themeObserver { NotificationCenter.default.removeObserver(o) }
+    }
+
+    private func applyTheme() {
+        let tm = ThemeManager.shared
+        // Only update if the user hasn't customized colors
+        if Self.loadColor(forKey: "terminalBGColor") == nil {
+            bgColor = tm.terminalBG
+        }
+        if Self.loadColor(forKey: "terminalFGColor") == nil {
+            fgColor = tm.terminalFG
+        }
+        // Update scroll view background
+        if let sv = superview as? NSClipView,
+           let scrollView = sv.superview as? NSScrollView {
+            scrollView.backgroundColor = bgColor
+        }
+        needsDisplay = true
+    }
+
+    func updateTimestampLayout() {
+        if showTimestamp {
+            let sample = ("00:00:00" as NSString)
+            let tsFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
+            timestampWidth = ceil(sample.size(withAttributes: [.font: tsFont]).width) + 8
+        } else {
+            timestampWidth = 0
+        }
+        paddingLeft = Self.basePaddingLeft + lineNumberWidth
+    }
+
+    func setTimestampVisible(_ visible: Bool) {
+        showTimestamp = visible
+        UserDefaults.standard.set(visible, forKey: "showTimestamp")
+        updateTimestampLayout()
+        triggerRelayout()
+    }
+
+    func updateLineNumberLayout() {
+        if showLineNumber {
+            let sample = ("99999" as NSString)
+            let lnFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
+            lineNumberWidth = ceil(sample.size(withAttributes: [.font: lnFont]).width) + 8
+        } else {
+            lineNumberWidth = 0
+        }
+        paddingLeft = Self.basePaddingLeft + lineNumberWidth
+    }
+
+    func setLineNumberVisible(_ visible: Bool) {
+        showLineNumber = visible
+        UserDefaults.standard.set(visible, forKey: "showLineNumber")
+        updateLineNumberLayout()
+        updateTimestampLayout()
+        triggerRelayout()
+    }
+
+    private func triggerRelayout() {
+        if let sv = superview as? NSClipView,
+           let container = sv.superview?.superview as? TerminalContainerView {
+            container.lastCols = 0; container.lastRows = 0
+            container.layout()
+            container.refreshDisplay()
+        }
+        needsDisplay = true
+    }
 
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
@@ -514,13 +617,9 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         UserDefaults.standard.set(newFont.fontName, forKey: "terminalFontName")
         UserDefaults.standard.set(Double(newFont.pointSize), forKey: "terminalFontSize")
 
-        // Recalculate terminal size
-        if let sv = superview as? NSClipView,
-           let container = sv.superview?.superview as? TerminalContainerView {
-            container.lastCols = 0; container.lastRows = 0
-            container.layout()
-            container.refreshDisplay()
-        }
+        updateLineNumberLayout()
+        updateTimestampLayout()
+        triggerRelayout()
     }
 
     @objc func resetToDefaults(_ sender: Any?) {
@@ -536,8 +635,8 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         UserDefaults.standard.removeObject(forKey: "terminalFontSize")
 
         // Reset colors
-        bgColor = NSColor.terminalBG
-        fgColor = TerminalScreen.defaultFG
+        bgColor = ThemeManager.shared.terminalBG
+        fgColor = ThemeManager.shared.terminalFG
         UserDefaults.standard.removeObject(forKey: "terminalBGColor")
         UserDefaults.standard.removeObject(forKey: "terminalFGColor")
 
@@ -547,15 +646,9 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             scrollView.backgroundColor = bgColor
         }
 
-        // Recalculate terminal size
-        if let sv = superview as? NSClipView,
-           let container = sv.superview?.superview as? TerminalContainerView {
-            container.lastCols = 0; container.lastRows = 0
-            container.layout()
-            container.refreshDisplay()
-        }
-
-        needsDisplay = true
+        updateLineNumberLayout()
+        updateTimestampLayout()
+        triggerRelayout()
     }
 
     override func viewDidMoveToWindow() {
@@ -582,8 +675,31 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let lastLine = min(totalLines - 1, Int(ceil(dirtyRect.maxY / cellHeight)))
         guard firstLine <= lastLine else { return }
 
+        // Helper to check if a physical line is a wrapped continuation
+        let isWrapped: (Int) -> Bool = { idx in
+            if idx < sbCount {
+                return idx < screen.scrollbackWrapped.count && screen.scrollbackWrapped[idx]
+            } else {
+                let sr = idx - sbCount
+                return sr < screen.gridWrapped.count && screen.gridWrapped[sr]
+            }
+        }
+
+        // Pre-compute logical line number at firstLine
+        var logicalLine = 0
+        if showLineNumber || showTimestamp {
+            for i in 0..<firstLine {
+                if !isWrapped(i) { logicalLine += 1 }
+            }
+        }
+
         for lineIdx in firstLine...lastLine {
             let y = CGFloat(lineIdx) * cellHeight
+
+            // Track logical line number
+            if (showLineNumber || showTimestamp) && !isWrapped(lineIdx) {
+                logicalLine += 1
+            }
 
             let cells: [TerminalScreen.Cell]
             let screenRow: Int
@@ -627,7 +743,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 } else if isSel {
                     bg = .selectedTextBackgroundColor
                 } else if isCursor {
-                    bg = NSColor(white: 0.75, alpha: 1)
+                    bg = ThemeManager.shared.cursorColor
                 } else if cell.bg != .clear {
                     bg = cell.bg
                 }
@@ -645,7 +761,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 }
 
                 var fg: NSColor
-                if isCursor { fg = .black }
+                if isCursor { fg = ThemeManager.shared.cursorTextColor }
                 else if isSel { fg = .white }
                 else { fg = (cell.fg == TerminalScreen.defaultFG) ? fgColor : cell.fg }
 
@@ -680,6 +796,51 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
                 col += cell.wide ? 2 : 1
             }
+
+            // Check if this is the last physical line of a logical line group
+            let isLastOfGroup = (lineIdx + 1 >= totalLines) || !isWrapped(lineIdx + 1)
+
+            let hasContent = cells.prefix(min(cells.count, screen.cols)).contains { c in
+                !c.widePadding && c.char != " "
+            }
+
+            // Draw line number on the left side (last line of group, non-empty only)
+            if showLineNumber && isLastOfGroup && hasContent {
+                let lnStr = "\(logicalLine)" as NSString
+                let lnFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
+                let lnColor = ThemeManager.shared.statusBarText
+                let lnAttrs: [NSAttributedString.Key: Any] = [
+                    .font: lnFont,
+                    .foregroundColor: lnColor,
+                ]
+                let lnSize = lnStr.size(withAttributes: lnAttrs)
+                let lnX = Self.basePaddingLeft + lineNumberWidth - lnSize.width - 4
+                let lnY = y + (cellHeight - lnFont.pointSize) / 2 - 1
+                lnStr.draw(at: NSPoint(x: lnX, y: lnY), withAttributes: lnAttrs)
+            }
+
+            // Draw timestamp on the right side (last line of group, non-empty only)
+            if showTimestamp && isLastOfGroup && hasContent {
+                let ts: Date
+                if lineIdx < sbCount {
+                    ts = lineIdx < screen.scrollbackTimestamps.count
+                        ? screen.scrollbackTimestamps[lineIdx] : Date()
+                } else {
+                    let sr = lineIdx - sbCount
+                    ts = sr < screen.gridTimestamps.count
+                        ? screen.gridTimestamps[sr] : Date()
+                }
+                let tsStr = timestampFormatter.string(from: ts) as NSString
+                let tsFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
+                let tsColor = ThemeManager.shared.statusBarText
+                let tsAttrs: [NSAttributedString.Key: Any] = [
+                    .font: tsFont,
+                    .foregroundColor: tsColor,
+                ]
+                let tsX = bounds.width - timestampWidth
+                let tsY = y + (cellHeight - tsFont.pointSize) / 2 - 1
+                tsStr.draw(at: NSPoint(x: tsX, y: tsY), withAttributes: tsAttrs)
+            }
         }
 
         // Draw IME marked text overlay
@@ -694,10 +855,11 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
         let y = CGFloat(sbCount + screen.cursorRow) * cellHeight
 
+        let tm = ThemeManager.shared
         let attrs: [NSAttributedString.Key: Any] = [
             .font: defaultFont,
-            .foregroundColor: NSColor.white,
-            .backgroundColor: NSColor(red: 0.2, green: 0.2, blue: 0.4, alpha: 1.0),
+            .foregroundColor: tm.markedTextFG,
+            .backgroundColor: tm.markedTextBG,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
         let attrStr = NSAttributedString(string: text, attributes: attrs)
@@ -870,6 +1032,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 return true
             case "k":
                 screen?.scrollback.removeAll()
+                screen?.scrollbackTimestamps.removeAll()
                 if let sv = superview as? NSClipView, let container = sv.superview?.superview as? TerminalContainerView {
                     container.refreshDisplay()
                 }
@@ -1045,14 +1208,14 @@ extension TerminalDrawView: NSTextInputClient {
 
 class StatusBarView: NSView {
     private let label = NSTextField(labelWithString: "")
+    private var themeObserver: NSObjectProtocol?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(white: 0.08, alpha: 1).cgColor
+        applyTheme()
 
         label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.textColor = .white.withAlphaComponent(0.5)
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -1060,9 +1223,20 @@ class StatusBarView: NSView {
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.themeDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.applyTheme() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { if let o = themeObserver { NotificationCenter.default.removeObserver(o) } }
+
+    private func applyTheme() {
+        let tm = ThemeManager.shared
+        layer?.backgroundColor = tm.statusBarBG.cgColor
+        label.textColor = tm.statusBarText
+    }
 
     func update(_ text: String) {
         label.stringValue = text
@@ -1072,5 +1246,5 @@ class StatusBarView: NSView {
 // MARK: - Color
 
 extension NSColor {
-    static let terminalBG = NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
+    static var terminalBG: NSColor { ThemeManager.shared.terminalBG }
 }

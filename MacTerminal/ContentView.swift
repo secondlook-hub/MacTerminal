@@ -39,6 +39,7 @@ struct ContentView: View {
     @EnvironmentObject var bookmarkStore: SSHBookmarkStore
     @EnvironmentObject var commandStore: CommandStore
     @StateObject private var tabManager = TabManager()
+    @ObservedObject private var themeManager = ThemeManager.shared
     @EnvironmentObject var updateChecker: UpdateChecker
     @State private var selectedItemID: UUID?
     @State private var showingAddSheet = false
@@ -70,6 +71,7 @@ struct ContentView: View {
                 }
             }
         }
+        .preferredColorScheme(themeManager.colorScheme)
         .focusedSceneValue(\.terminalScreen, tabManager.selectedTab?.screen)
         .focusedSceneValue(\.terminalTab, tabManager.selectedTab)
         .focusedSceneValue(\.isRecording, tabManager.selectedTab?.isRecording ?? false)
@@ -147,5 +149,19 @@ struct ContentView: View {
     private func runCommand(_ command: CommandItem) {
         guard let tab = tabManager.selectedTab else { return }
         tab.terminal.write(command.command)
+        DispatchQueue.main.async {
+            if let drawView: TerminalDrawView = Self.findSubview(in: NSApp.keyWindow?.contentView) {
+                drawView.window?.makeFirstResponder(drawView)
+            }
+        }
+    }
+
+    private static func findSubview<T: NSView>(in view: NSView?) -> T? {
+        guard let view = view else { return nil }
+        if let v = view as? T { return v }
+        for sub in view.subviews {
+            if let found: T = findSubview(in: sub) { return found }
+        }
+        return nil
     }
 }

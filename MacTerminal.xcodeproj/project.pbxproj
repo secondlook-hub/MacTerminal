@@ -27,6 +27,8 @@
 		AA000000000000000000003B /* SplitTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000039 /* SplitTerminalView.swift */; };
 		AA000000000000000000003E /* CommandItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000003C /* CommandItem.swift */; };
 		AA000000000000000000003F /* CommandEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000003D /* CommandEditView.swift */; };
+		AA0000000000000000000041 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000042 /* ThemeManager.swift */; };
+		AA0000000000000000000044 /* SettingsExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000043 /* SettingsExporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +55,8 @@
 		AA0000000000000000000039 /* SplitTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTerminalView.swift; sourceTree = "<group>"; };
 		AA000000000000000000003C /* CommandItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandItem.swift; sourceTree = "<group>"; };
 		AA000000000000000000003D /* CommandEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandEditView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000042 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		AA0000000000000000000043 /* SettingsExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsExporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,6 +118,8 @@
 				AA000000000000000000002D /* WindowManager.swift */,
 				AA0000000000000000000036 /* UpdateChecker.swift */,
 				AA000000000000000000003C /* CommandItem.swift */,
+				AA0000000000000000000042 /* ThemeManager.swift */,
+				AA0000000000000000000043 /* SettingsExporter.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -223,6 +229,8 @@
 				AA000000000000000000003B /* SplitTerminalView.swift in Sources */,
 				AA000000000000000000003E /* CommandItem.swift in Sources */,
 				AA000000000000000000003F /* CommandEditView.swift in Sources */,
+				AA0000000000000000000041 /* ThemeManager.swift in Sources */,
+				AA0000000000000000000044 /* SettingsExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -369,7 +377,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -398,7 +406,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

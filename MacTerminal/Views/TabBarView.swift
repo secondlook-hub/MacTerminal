@@ -35,20 +35,28 @@ class TabBarNSView: NSView {
     let coordinator: TabBarView.Coordinator
     private let stackView = NSStackView()
     private let plusButton = NSButton()
-    private static let bgColor = NSColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1)
+    private var themeObserver: NSObjectProtocol?
 
     init(coordinator: TabBarView.Coordinator) {
         self.coordinator = coordinator
         super.init(frame: .zero)
         setup()
         registerForDraggedTypes([.terminalTab])
+
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.themeDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.layer?.backgroundColor = ThemeManager.shared.tabBarBG.cgColor
+            self?.reloadTabs()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { if let o = themeObserver { NotificationCenter.default.removeObserver(o) } }
 
     private func setup() {
         wantsLayer = true
-        layer?.backgroundColor = Self.bgColor.cgColor
+        layer?.backgroundColor = ThemeManager.shared.tabBarBG.cgColor
 
         stackView.orientation = .horizontal
         stackView.spacing = 0
@@ -233,12 +241,13 @@ class TabItemNSView: NSView {
     }
 
     private func updateAppearance() {
+        let tm = ThemeManager.shared
         stopBlinkAnimation()
 
         if isSelected {
             layer?.backgroundColor = NSColor.terminalBG.cgColor
         } else if isHovering {
-            layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+            layer?.backgroundColor = tm.tabItemHoverBG.cgColor
         } else if hasUpdate {
             startBlinkAnimation()
         } else {
@@ -258,9 +267,9 @@ class TabItemNSView: NSView {
             titleAlpha = 0.5
         }
 
-        iconView.contentTintColor = .white.withAlphaComponent(iconAlpha)
-        titleLabel.textColor = .white.withAlphaComponent(titleAlpha)
-        closeBtn.contentTintColor = .white.withAlphaComponent(0.4)
+        iconView.contentTintColor = tm.tabIconColor.withAlphaComponent(iconAlpha)
+        titleLabel.textColor = tm.tabTitleColor.withAlphaComponent(titleAlpha)
+        closeBtn.contentTintColor = tm.tabCloseColor
         closeBtn.isHidden = !(isSelected || isHovering)
 
         if isSelected {

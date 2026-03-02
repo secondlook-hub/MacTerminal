@@ -5,11 +5,14 @@ struct MacTerminalApp: App {
     @StateObject private var bookmarkStore = SSHBookmarkStore()
     @StateObject private var commandStore = CommandStore()
     @StateObject private var updateChecker = UpdateChecker()
+    @ObservedObject private var themeManager = ThemeManager.shared
     @FocusedValue(\.terminalScreen) var focusedScreen
     @FocusedValue(\.terminalTab) var focusedTab
     @FocusedValue(\.isRecording) var isRecording
     @FocusedValue(\.tabManager) var focusedTabManager
     @AppStorage("blockSelectionMode") var blockSelectionMode = false
+    @AppStorage("showLineNumber") var showLineNumber = false
+    @AppStorage("showTimestamp") var showTimestamp = false
 
     init() {
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -44,6 +47,23 @@ struct MacTerminalApp: App {
                     focusedTab?.stopRecording()
                 }
                 .disabled(isRecording != true)
+
+                Divider()
+
+                Menu("Settings") {
+                    Button("Export...") {
+                        SettingsExporter.exportSettings(
+                            bookmarkStore: bookmarkStore,
+                            commandStore: commandStore
+                        )
+                    }
+                    Button("Import...") {
+                        SettingsExporter.importSettings(
+                            bookmarkStore: bookmarkStore,
+                            commandStore: commandStore
+                        )
+                    }
+                }
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
@@ -99,6 +119,34 @@ struct MacTerminalApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Divider()
+                Menu("Theme") {
+                    ForEach(Theme.allCases, id: \.self) { theme in
+                        Button {
+                            ThemeManager.shared.current = theme
+                        } label: {
+                            if themeManager.current == theme {
+                                Label(theme.label, systemImage: "checkmark")
+                            } else {
+                                Text(theme.label)
+                            }
+                        }
+                    }
+                }
+                Toggle("Show Line Number", isOn: Binding(
+                    get: { showLineNumber },
+                    set: { newValue in
+                        showLineNumber = newValue
+                        Self.updateAllLineNumberVisibility(newValue)
+                    }
+                ))
+                Toggle("Timestamp", isOn: Binding(
+                    get: { showTimestamp },
+                    set: { newValue in
+                        showTimestamp = newValue
+                        Self.updateAllTimestampVisibility(newValue)
+                    }
+                ))
+                Divider()
                 Button("Change Font...") {
                     Self.findDrawView()?.showFontPanel(nil)
                 }
@@ -124,6 +172,31 @@ struct MacTerminalApp: App {
     private static func findContainerView() -> TerminalContainerView? {
         guard let view = NSApp.keyWindow?.contentView else { return nil }
         return findSubview(in: view)
+    }
+
+    private static func updateAllLineNumberVisibility(_ visible: Bool) {
+        for window in NSApp.windows {
+            guard let contentView = window.contentView else { continue }
+            findAllSubviews(of: TerminalDrawView.self, in: contentView).forEach {
+                $0.setLineNumberVisible(visible)
+            }
+        }
+    }
+
+    private static func updateAllTimestampVisibility(_ visible: Bool) {
+        for window in NSApp.windows {
+            guard let contentView = window.contentView else { continue }
+            findAllSubviews(of: TerminalDrawView.self, in: contentView).forEach {
+                $0.setTimestampVisible(visible)
+            }
+        }
+    }
+
+    private static func findAllSubviews<T: NSView>(of type: T.Type, in view: NSView) -> [T] {
+        var result: [T] = []
+        if let v = view as? T { result.append(v) }
+        for sub in view.subviews { result.append(contentsOf: findAllSubviews(of: type, in: sub)) }
+        return result
     }
 
     private static func findSubview<T: NSView>(in view: NSView) -> T? {
