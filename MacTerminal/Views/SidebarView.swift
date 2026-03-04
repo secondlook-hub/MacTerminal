@@ -383,9 +383,19 @@ struct SidebarTreeItemView<FolderMenu: View, BookmarkMenu: View>: View {
         )
     }
 
+    @ViewBuilder
+    private func itemRowBackground(for id: UUID) -> some View {
+        if selectedItemID == id {
+            RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.2))
+        } else {
+            Color.clear
+        }
+    }
+
     private var rowContent: some View {
         SidebarItemRow(item: item)
             .tag(item.id)
+            .listRowBackground(itemRowBackground(for: item.id))
             .contentShape(Rectangle())
             .onTapGesture { selectedItemID = item.id }
             .onDrag {
