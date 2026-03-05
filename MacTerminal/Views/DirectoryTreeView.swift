@@ -36,7 +36,10 @@ class DirectoryTreeModel: ObservableObject {
         selectedPath = path
         rootItems = loadChildren(at: "/")
         expandToPath(path)
-        scrollToPath = path
+        // Delay scroll to allow SwiftUI to lay out the expanded tree
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.scrollToPath = path
+        }
     }
 
     func refresh() {
@@ -185,13 +188,9 @@ struct DirectoryTreeRow: View {
         } label: {
             Label(item.name, systemImage: "folder.fill")
                 .font(.system(size: 12))
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .accentColor : .primary)
                 .lineLimit(1)
-                .id(item.path)
-                .listRowBackground(
-                    isSelected
-                        ? RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.2))
-                        : nil
-                )
                 .contentShape(Rectangle())
                 .onTapGesture { model.selectedPath = item.path }
                 .gesture(TapGesture(count: 2).onEnded {
@@ -199,5 +198,11 @@ struct DirectoryTreeRow: View {
                     onChangeDirectory?(item.path)
                 })
         }
+        .id(item.path)
+        .listRowBackground(
+            isSelected
+                ? RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.2))
+                : nil
+        )
     }
 }

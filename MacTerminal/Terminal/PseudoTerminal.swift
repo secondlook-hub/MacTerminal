@@ -13,6 +13,27 @@ class PseudoTerminal: ObservableObject {
     /// Buffer accumulating recent output for prompt detection (accessed only from read queue).
     private var passwordBuffer = ""
 
+    /// Shell integration directory for OSC 7 support (created once lazily)
+    private static let shellIntegrationDir: String = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("MacTerminal/shell-integration/zsh")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let zshenv = """
+        if [[ -n "${__MACTERMINAL_ORIG_ZDOTDIR+x}" ]]; then
+            ZDOTDIR="${__MACTERMINAL_ORIG_ZDOTDIR}"
+            unset __MACTERMINAL_ORIG_ZDOTDIR
+        else
+            unset ZDOTDIR
+        fi
+        [[ -f "${ZDOTDIR:-$HOME}/.zshenv" ]] && source "${ZDOTDIR:-$HOME}/.zshenv"
+        __macterminal_report_cwd() { printf '\\e]7;file://%s%s\\a' "${HOST}" "${PWD}" }
+        chpwd_functions+=(__macterminal_report_cwd)
+        precmd_functions+=(__macterminal_report_cwd)
+        """
+        try? zshenv.write(to: dir.appendingPathComponent(".zshenv"), atomically: true, encoding: .utf8)
+        return dir.path
+    }()
+
     var onOutput: ((Data) -> Void)?
     var onProcessExit: (() -> Void)?
 
@@ -20,6 +41,9 @@ class PseudoTerminal: ObservableObject {
 
     func start(shell: String = "/bin/zsh", workingDirectory: String? = nil) {
         if isRunning { stop() }
+
+        // Prepare shell integration files before fork
+        let integrationDir = Self.shellIntegrationDir
 
         var master: Int32 = 0
         var ws = winsize(ws_row: 25, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
@@ -35,6 +59,15 @@ class PseudoTerminal: ObservableObject {
             setenv("TERM_PROGRAM", "MacTerminal", 1)
             setenv("LANG", "en_US.UTF-8", 1)
             setenv("LC_ALL", "en_US.UTF-8", 1)
+
+            // Shell integration: redirect ZDOTDIR so zsh emits OSC 7
+            if shell.hasSuffix("/zsh") || shell == "zsh" {
+                let origZdotdir = getenv("ZDOTDIR")
+                if origZdotdir != nil {
+                    setenv("__MACTERMINAL_ORIG_ZDOTDIR", origZdotdir!, 1)
+                }
+                setenv("ZDOTDIR", integrationDir, 1)
+            }
 
             var args: [UnsafeMutablePointer<CChar>?] = [
                 strdup(shell),

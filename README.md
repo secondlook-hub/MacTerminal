@@ -38,6 +38,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Hidden Input Protection** — Non-echoed input (passwords, etc.) is not displayed in tab titles
 - **Working Directory** — Starts in home directory; new tabs inherit current directory
 - **Directory Tree** — Right-side panel showing filesystem tree from root; auto-refreshes and highlights on `cd`; double-click to change directory (View > Directory Tree)
+- **Shell Integration** — Built-in zsh shell integration automatically reports current directory via OSC 7; directory tree highlights and scrolls to current directory on `cd`
 - **Connection Double-Click** — Double-click SSH bookmarks to connect instantly
 - **List Deselect** — Click empty area in connections/commands list to clear selection
 - **Independent Terminal Identity** — Uses own `TERM_PROGRAM` identifier to prevent macOS from launching the default Terminal.app
