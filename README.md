@@ -40,6 +40,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Directory Tree** — Right-side panel showing filesystem tree from root; auto-refreshes and highlights on `cd`; double-click to change directory (View > Directory Tree)
 - **Connection Double-Click** — Double-click SSH bookmarks to connect instantly
 - **List Deselect** — Click empty area in connections/commands list to clear selection
+- **Independent Terminal Identity** — Uses own `TERM_PROGRAM` identifier to prevent macOS from launching the default Terminal.app
 - **Auto Update** — Checks for new releases via GitHub Releases API
 
 ## Screenshots

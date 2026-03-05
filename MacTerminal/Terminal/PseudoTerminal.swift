@@ -32,7 +32,7 @@ class PseudoTerminal: ObservableObject {
             chdir(dir)
 
             setenv("TERM", "xterm-256color", 1)
-            setenv("TERM_PROGRAM", "Apple_Terminal", 1)
+            setenv("TERM_PROGRAM", "MacTerminal", 1)
             setenv("LANG", "en_US.UTF-8", 1)
             setenv("LC_ALL", "en_US.UTF-8", 1)
 
