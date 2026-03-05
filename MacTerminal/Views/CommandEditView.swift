@@ -31,6 +31,7 @@ struct CommandEditView: View {
                 Section("General") {
                     TextField("Display Name", text: $name)
                         .textFieldStyle(.roundedBorder)
+                        .nsTextAlignment(.left)
                 }
                 Section("Command") {
                     TextEditor(text: $command)

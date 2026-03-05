@@ -74,6 +74,7 @@ class TerminalScreen {
     var onCommandEntered: ((String) -> Void)?
     var onResponse: ((String) -> Void)?
     var currentDirectory: String?
+    var onDirectoryChange: ((String) -> Void)?
     var inputBuffer = ""
     var recordingHandle: FileHandle?
     private var recordingLineBuffer = ""
@@ -680,6 +681,9 @@ class TerminalScreen {
                 currentDirectory = url.path
             } else {
                 currentDirectory = urlStr
+            }
+            if let dir = currentDirectory {
+                onDirectoryChange?(dir)
             }
             onTitleChange?(currentDirectory ?? urlStr)
         }

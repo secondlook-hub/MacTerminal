@@ -39,6 +39,7 @@ struct SSHBookmarkEditView: View {
                 Section("General") {
                     TextField("Display Name", text: $name)
                         .textFieldStyle(.roundedBorder)
+                        .nsTextAlignment(.left)
                 }
 
                 Section("Connection") {

@@ -79,10 +79,12 @@ struct SidebarView: View {
                     bookmarkStore: bookmarkStore,
                     folderContextMenu: { folderContextMenu($0) },
                     bookmarkContextMenu: { bookmarkContextMenu($0) },
-                    saveExpanded: { Self.saveExpandedFolders($0) }
+                    saveExpanded: { Self.saveExpandedFolders($0) },
+                    onConnect: onConnect
                 )
             }
         }
+        .background(ListEmptyAreaTapHandler { selectedItemID = nil })
         .safeAreaInset(edge: .bottom) {
             if let bm = selectedBookmark {
                 Button(action: { onConnect(bm) }) {
@@ -108,7 +110,7 @@ struct SidebarView: View {
     // MARK: - Commands Tab
 
     private var commandsTab: some View {
-        List(selection: $selectedCommandID) {
+        List {
             ForEach(commandStore.commands) { cmd in
                 CommandRow(command: cmd)
                     .tag(cmd.id)
@@ -130,6 +132,7 @@ struct SidebarView: View {
             }
             .onMove { commandStore.move(fromOffsets: $0, toOffset: $1) }
         }
+        .background(ListEmptyAreaTapHandler { selectedCommandID = nil })
         .safeAreaInset(edge: .bottom) {
             if let cmd = selectedCommand {
                 Button(action: { onRunCommand(cmd) }) {
@@ -343,6 +346,7 @@ struct SidebarTreeItemView<FolderMenu: View, BookmarkMenu: View>: View {
     let folderContextMenu: (SidebarItem) -> FolderMenu
     let bookmarkContextMenu: (SSHBookmark) -> BookmarkMenu
     let saveExpanded: (Set<UUID>) -> Void
+    var onConnect: ((SSHBookmark) -> Void)?
 
     var body: some View {
         if item.isFolder {
@@ -357,7 +361,8 @@ struct SidebarTreeItemView<FolderMenu: View, BookmarkMenu: View>: View {
                             bookmarkStore: bookmarkStore,
                             folderContextMenu: folderContextMenu,
                             bookmarkContextMenu: bookmarkContextMenu,
-                            saveExpanded: saveExpanded
+                            saveExpanded: saveExpanded,
+                            onConnect: onConnect
                         )
                     }
                 }
@@ -398,6 +403,11 @@ struct SidebarTreeItemView<FolderMenu: View, BookmarkMenu: View>: View {
             .listRowBackground(itemRowBackground(for: item.id))
             .contentShape(Rectangle())
             .onTapGesture { selectedItemID = item.id }
+            .gesture(TapGesture(count: 2).onEnded {
+                if let bm = item.bookmark, let onConnect = onConnect {
+                    onConnect(bm)
+                }
+            })
             .onDrag {
                 draggedItemID = item.id
                 return NSItemProvider(object: item.id.uuidString as NSString)
@@ -463,4 +473,67 @@ struct SidebarDropDelegate: DropDelegate {
     }
 
     func dropExited(info: DropInfo) {}
+}
+
+// MARK: - Empty Area Click Handler
+
+struct ListEmptyAreaTapHandler: NSViewRepresentable {
+    var onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTap: onTap)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            guard let scrollView = Self.findEnclosingScrollView(of: view) else { return }
+            let gesture = NSClickGestureRecognizer(
+                target: context.coordinator,
+                action: #selector(Coordinator.handleClick(_:))
+            )
+            gesture.delaysPrimaryMouseButtonEvents = false
+            scrollView.addGestureRecognizer(gesture)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onTap = onTap
+    }
+
+    private static func findEnclosingScrollView(of view: NSView) -> NSScrollView? {
+        var current: NSView? = view
+        while let v = current {
+            if let sv = v as? NSScrollView { return sv }
+            current = v.superview
+        }
+        return nil
+    }
+
+    class Coordinator: NSObject {
+        var onTap: () -> Void
+
+        init(onTap: @escaping () -> Void) {
+            self.onTap = onTap
+        }
+
+        @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
+            guard let scrollView = gesture.view as? NSScrollView else { return }
+            if let tableView = Self.findTableView(in: scrollView) {
+                let point = gesture.location(in: tableView)
+                if tableView.row(at: point) < 0 {
+                    onTap()
+                }
+            }
+        }
+
+        private static func findTableView(in view: NSView) -> NSTableView? {
+            if let tv = view as? NSTableView { return tv }
+            for sub in view.subviews {
+                if let found = findTableView(in: sub) { return found }
+            }
+            return nil
+        }
+    }
 }

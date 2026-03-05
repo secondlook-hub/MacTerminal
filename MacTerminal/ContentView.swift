@@ -47,6 +47,8 @@ struct ContentView: View {
     @State private var targetFolderID: UUID?
     @State private var showingAddCommandSheet = false
     @State private var editingCommand: CommandItem?
+    @AppStorage("showDirectoryTree") private var showDirectoryTree = false
+    @StateObject private var directoryTreeModel = DirectoryTreeModel()
 
     var body: some View {
         NavigationSplitView {
@@ -61,15 +63,32 @@ struct ContentView: View {
                 onRunCommand: runCommand
             )
         } detail: {
-            VStack(spacing: 0) {
-                TabBarView(tabManager: tabManager)
-                if let tab = tabManager.selectedTab {
-                    SplitTerminalView(nodeRef: tab.rootNode, tab: tab)
-                        .id(tab.id)
-                } else {
-                    Color(nsColor: .terminalBG)
+            HSplitView {
+                VStack(spacing: 0) {
+                    TabBarView(tabManager: tabManager)
+                    if let tab = tabManager.selectedTab {
+                        SplitTerminalView(nodeRef: tab.rootNode, tab: tab)
+                            .id(tab.id)
+                    } else {
+                        Color(nsColor: .terminalBG)
+                    }
+                }
+                if showDirectoryTree {
+                    DirectoryTreeView(
+                        model: directoryTreeModel,
+                        onChangeDirectory: { path in
+                            changeDirectory(to: path)
+                        }
+                    )
+                    .frame(minWidth: 180, idealWidth: 220, maxWidth: 400)
                 }
             }
+        }
+        .onChange(of: tabManager.selectedTabID) { _ in
+            setupDirectoryTracking()
+        }
+        .onChange(of: tabManager.selectedTab?.focusedPaneID) { _ in
+            setupDirectoryTracking()
         }
         .preferredColorScheme(themeManager.colorScheme)
         .focusedSceneValue(\.terminalScreen, tabManager.selectedTab?.screen)
@@ -78,6 +97,7 @@ struct ContentView: View {
         .focusedSceneValue(\.tabManager, tabManager)
         .navigationTitle(tabManager.selectedTab?.windowTitle ?? "MacTerminal")
         .onAppear {
+            setupDirectoryTracking()
             DispatchQueue.main.async {
                 WindowManager.shared.register(tabManager, window: NSApp.keyWindow)
             }
@@ -163,5 +183,31 @@ struct ContentView: View {
             if let found: T = findSubview(in: sub) { return found }
         }
         return nil
+    }
+
+    private func setupDirectoryTracking() {
+        guard let tab = tabManager.selectedTab else { return }
+        for pane in tab.rootNode.node.allPanes() {
+            pane.screen.onDirectoryChange = { [weak directoryTreeModel] dir in
+                DispatchQueue.main.async {
+                    directoryTreeModel?.directoryChanged(dir)
+                }
+            }
+        }
+        if directoryTreeModel.rootItems.isEmpty {
+            let dir = tab.screen.currentDirectory ?? NSHomeDirectory()
+            directoryTreeModel.navigateTo(path: dir)
+        }
+    }
+
+    private func changeDirectory(to path: String) {
+        guard let tab = tabManager.selectedTab else { return }
+        let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
+        tab.terminal.write("cd '\(escaped)'\r")
+        DispatchQueue.main.async {
+            if let drawView: TerminalDrawView = Self.findSubview(in: NSApp.keyWindow?.contentView) {
+                drawView.window?.makeFirstResponder(drawView)
+            }
+        }
     }
 }

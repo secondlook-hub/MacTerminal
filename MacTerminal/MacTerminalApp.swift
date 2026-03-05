@@ -14,6 +14,7 @@ struct MacTerminalApp: App {
     @AppStorage("showLineNumber") var showLineNumber = false
     @AppStorage("showTimestamp") var showTimestamp = false
     @AppStorage("textWrap") var textWrap = true
+    @AppStorage("showDirectoryTree") var showDirectoryTree = false
 
     init() {
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -119,6 +120,7 @@ struct MacTerminalApp: App {
                 Divider()
             }
             CommandGroup(after: .toolbar) {
+                Toggle("Directory Tree", isOn: $showDirectoryTree)
                 Divider()
                 Menu("Theme") {
                     ForEach(Theme.allCases, id: \.self) { theme in

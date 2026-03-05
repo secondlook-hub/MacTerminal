@@ -37,6 +37,9 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Process Group Cleanup** — Tab close kills entire process group (shell + SSH + child processes)
 - **Hidden Input Protection** — Non-echoed input (passwords, etc.) is not displayed in tab titles
 - **Working Directory** — Starts in home directory; new tabs inherit current directory
+- **Directory Tree** — Right-side panel showing filesystem tree from root; auto-refreshes and highlights on `cd`; double-click to change directory (View > Directory Tree)
+- **Connection Double-Click** — Double-click SSH bookmarks to connect instantly
+- **List Deselect** — Click empty area in connections/commands list to clear selection
 - **Auto Update** — Checks for new releases via GitHub Releases API
 
 ## Screenshots
@@ -98,6 +101,8 @@ MacTerminal/
     ├── SidebarView.swift         # Tabbed sidebar (Connections + Commands)
     ├── SSHBookmarkEditView.swift # Bookmark add/edit form
     ├── CommandEditView.swift     # Command add/edit form
+    ├── DirectoryTreeView.swift   # Directory tree panel
+    ├── NSTextAlignmentModifier.swift # NSTextField alignment helper
     ├── TabBarView.swift          # Tab bar with drag reordering
     ├── TerminalView.swift        # NSViewRepresentable terminal bridge
     └── DetachedWindowContent.swift
