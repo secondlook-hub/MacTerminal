@@ -20,6 +20,21 @@ struct MacTerminalApp: App {
         NSWindow.allowsAutomaticWindowTabbing = false
         // Disable macOS "press and hold" accent popup so all keys repeat normally
         UserDefaults.standard.set(false, forKey: "ApplePressAndHoldEnabled")
+        // Trigger folder access permission prompts
+        Self.requestFolderAccess()
+    }
+
+    private static func requestFolderAccess() {
+        let folders = [
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        ]
+        DispatchQueue.global(qos: .utility).async {
+            for folder in folders {
+                _ = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            }
+        }
     }
 
     var body: some Scene {

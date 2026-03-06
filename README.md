@@ -43,6 +43,8 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **List Deselect** — Click empty area in connections/commands list to clear selection
 - **Independent Terminal Identity** — Uses own `TERM_PROGRAM` identifier to prevent macOS from launching the default Terminal.app
 - **Auto Update** — Checks for new releases via GitHub Releases API
+- **Folder Access** — Prompts for Desktop, Documents, Downloads folder access on first launch
+- **Rename Folder Sheet** — Improved folder rename UI with sheet dialog and keyboard support
 
 ## Screenshots
 

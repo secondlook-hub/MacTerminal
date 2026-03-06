@@ -54,13 +54,13 @@ struct SidebarView: View {
                 }
             }
         }
-        .alert("Rename Folder", isPresented: showingRenameAlert) {
-            TextField("Folder name", text: $renameFolderName)
-            Button("Cancel", role: .cancel) { renamingFolderID = nil }
-            Button("Rename") {
-                if let id = renamingFolderID, !renameFolderName.isEmpty {
-                    bookmarkStore.renameFolder(id: id, newName: renameFolderName)
+        .sheet(isPresented: showingRenameAlert) {
+            RenameFolderSheet(name: renameFolderName) { newName in
+                if let id = renamingFolderID, !newName.isEmpty {
+                    bookmarkStore.renameFolder(id: id, newName: newName)
                 }
+                renamingFolderID = nil
+            } onCancel: {
                 renamingFolderID = nil
             }
         }
@@ -534,6 +534,47 @@ struct ListEmptyAreaTapHandler: NSViewRepresentable {
                 if let found = findTableView(in: sub) { return found }
             }
             return nil
+        }
+    }
+}
+
+// MARK: - Rename Folder Sheet
+
+struct RenameFolderSheet: View {
+    @State private var name: String
+    @FocusState private var isFocused: Bool
+    var onRename: (String) -> Void
+    var onCancel: () -> Void
+
+    init(name: String, onRename: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        _name = State(initialValue: name)
+        self.onRename = onRename
+        self.onCancel = onCancel
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Rename Folder")
+                .font(.headline)
+            TextField("Folder name", text: $name)
+                .focused($isFocused)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { onRename(name) }
+            HStack {
+                Button("Cancel", role: .cancel) { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Rename") { onRename(name) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 300)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isFocused = true
+            }
         }
     }
 }
