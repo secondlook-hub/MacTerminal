@@ -45,6 +45,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Auto Update** — Checks for new releases via GitHub Releases API
 - **Folder Access** — Prompts for Desktop, Documents, Downloads folder access on first launch
 - **Rename Folder Sheet** — Improved folder rename UI with sheet dialog and keyboard support
+- **Full Disk Access Check** — Checks Full Disk Access permission on launch; shows setup guide and opens System Settings if not granted
 
 ## Screenshots
 

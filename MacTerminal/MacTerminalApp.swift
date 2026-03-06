@@ -22,6 +22,43 @@ struct MacTerminalApp: App {
         UserDefaults.standard.set(false, forKey: "ApplePressAndHoldEnabled")
         // Trigger folder access permission prompts
         Self.requestFolderAccess()
+        // Check Full Disk Access permission
+        Self.checkFullDiskAccess()
+    }
+
+    private static func checkFullDiskAccess() {
+        DispatchQueue.main.async {
+            let testPath = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Safari/Bookmarks.plist")
+            let hasAccess = FileManager.default.isReadableFile(atPath: testPath.path)
+
+            if !hasAccess && !UserDefaults.standard.bool(forKey: "skipFullDiskAccessAlert") {
+                let alert = NSAlert()
+                alert.messageText = "전체 디스크 접근 권한 필요"
+                alert.informativeText = """
+                    MacTerminal이 정상적으로 동작하려면 '전체 디스크 접근 권한'이 필요합니다.
+
+                    설정 방법:
+                    1. 시스템 설정 > 개인정보 보호 및 보안 > 전체 디스크 접근 권한
+                    2. MacTerminal을 목록에서 찾아 활성화
+                    3. 앱을 재시작
+
+                    아래 버튼을 눌러 설정 화면을 열 수 있습니다.
+                    """
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "설정 열기")
+                alert.addButton(withTitle: "나중에")
+
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } else {
+                    UserDefaults.standard.set(true, forKey: "skipFullDiskAccessAlert")
+                }
+            }
+        }
     }
 
     private static func requestFolderAccess() {
