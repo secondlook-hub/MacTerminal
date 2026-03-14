@@ -31,7 +31,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Recording** — Record terminal sessions to text files
 - **Save Output** — Export terminal content to file (Cmd+S)
 - **Customization** — Configurable font, background color, and text color
-- **Block Selection** — Toggle block selection mode for text
+- **Block Selection** — Toggle block selection mode for text (Cmd+B)
 - **Multi-Window** — Detachable terminal windows with full terminal updates in detached windows
 - **Clean Shell Exit** — `exit` command properly terminates shell and all child processes without freezing
 - **Process Group Cleanup** — Tab close kills entire process group (shell + SSH + child processes)
@@ -79,6 +79,7 @@ Requires **Xcode 15+** and **macOS 13.0 Ventura** or later.
 | Cmd+F | Find |
 | Cmd+S | Save Shell Content |
 | Cmd+Y | Input History |
+| Cmd+B | Toggle Block Selection |
 | Cmd+K | Clear Scrollback |
 | Cmd+C | Copy (with selection) |
 | Cmd+V | Paste |

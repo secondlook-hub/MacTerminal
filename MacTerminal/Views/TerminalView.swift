@@ -1123,6 +1123,10 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     container.toggleFindBar(show: !container.isFindBarVisible)
                 }
                 return true
+            case "b":
+                let current = UserDefaults.standard.bool(forKey: "blockSelectionMode")
+                UserDefaults.standard.set(!current, forKey: "blockSelectionMode")
+                return true
             case "k":
                 screen?.scrollback.removeAll()
                 screen?.scrollbackTimestamps.removeAll()

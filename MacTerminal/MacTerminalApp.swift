@@ -135,6 +135,7 @@ struct MacTerminalApp: App {
             CommandGroup(after: .pasteboard) {
                 Divider()
                 Toggle("Block Selection", isOn: $blockSelectionMode)
+                    .keyboardShortcut("b", modifiers: .command)
                 Divider()
                 Button("Find...") {
                     Self.findContainerView()?.toggleFindBar(show: true)
