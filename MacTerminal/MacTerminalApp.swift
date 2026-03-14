@@ -86,8 +86,13 @@ struct MacTerminalApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About MacTerminal") {
                     let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+                    let credits = NSMutableAttributedString(string: "https://miunsi.blogspot.com/", attributes: [
+                        .link: URL(string: "https://miunsi.blogspot.com/")!,
+                        .font: NSFont.systemFont(ofSize: 11)
+                    ])
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
-                        .version: marketing
+                        .version: marketing,
+                        .credits: credits
                     ])
                 }
             }
@@ -161,6 +166,12 @@ struct MacTerminalApp: App {
                 Button("Check for Updates...") {
                     Task {
                         await updateChecker.checkForUpdates(manual: true)
+                    }
+                }
+                Divider()
+                Button("Visit Developer Website") {
+                    if let url = URL(string: "https://miunsi.blogspot.com/") {
+                        NSWorkspace.shared.open(url)
                     }
                 }
             }
