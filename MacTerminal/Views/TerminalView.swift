@@ -454,6 +454,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     // IME composition
     private var markedString: String?
     private var _inputContext: NSTextInputContext?
+    private var isBackspacingComposition = false
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -1062,7 +1063,9 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         case 51:
             // If IME is composing (e.g. Korean), let IME handle backspace first
             if hasMarkedText() {
+                isBackspacingComposition = true
                 inputContext?.handleEvent(event)
+                isBackspacingComposition = false
                 return
             }
             if let buf = screen?.inputBuffer, !buf.isEmpty {
@@ -1308,6 +1311,14 @@ extension TerminalDrawView: NSTextInputClient {
         if let s = string as? String { str = s }
         else if let s = string as? NSAttributedString { str = s.string }
         else { return }
+
+        // When backspacing the last jamo, IME may commit it instead of deleting;
+        // suppress the commit so a single backspace clears the last consonant.
+        if isBackspacingComposition {
+            markedString = nil
+            needsDisplay = true
+            return
+        }
 
         markedString = nil
         screen?.inputBuffer += str

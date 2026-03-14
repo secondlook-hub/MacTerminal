@@ -46,6 +46,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Folder Access** — Prompts for Desktop, Documents, Downloads folder access on first launch
 - **Rename Folder Sheet** — Improved folder rename UI with sheet dialog and keyboard support
 - **Full Disk Access Check** — Checks Full Disk Access permission on launch; shows setup guide and opens System Settings if not granted
+- **Korean IME Backspace Fix** — Single backspace deletes the last composing jamo (consonant) without requiring a second press
 
 ## Screenshots
 
