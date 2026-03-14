@@ -1060,6 +1060,11 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             screen?.inputBuffer = ""
             terminal?.write("\r")
         case 51:
+            // If IME is composing (e.g. Korean), let IME handle backspace first
+            if hasMarkedText() {
+                inputContext?.handleEvent(event)
+                return
+            }
             if let buf = screen?.inputBuffer, !buf.isEmpty {
                 screen?.inputBuffer = String(buf.dropLast())
             }
