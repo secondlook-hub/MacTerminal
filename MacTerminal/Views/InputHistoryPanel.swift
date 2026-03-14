@@ -63,6 +63,12 @@ class InputHistoryPanel: NSPanel {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(scrollView)
 
+        // Clear on exit checkbox
+        let clearOnExitCheck = NSButton(checkboxWithTitle: "프로그램 종료시 히스토리 삭제", target: self, action: #selector(clearOnExitChanged(_:)))
+        clearOnExitCheck.translatesAutoresizingMaskIntoConstraints = false
+        clearOnExitCheck.state = InputHistoryManager.shared.clearOnExit ? .on : .off
+        container.addSubview(clearOnExitCheck)
+
         // Clear button
         let clearButton = NSButton(title: "전체 삭제", target: self, action: #selector(clearHistory))
         clearButton.translatesAutoresizingMaskIntoConstraints = false
@@ -77,10 +83,13 @@ class InputHistoryPanel: NSPanel {
             scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: clearButton.topAnchor, constant: -8),
+            scrollView.bottomAnchor.constraint(equalTo: clearOnExitCheck.topAnchor, constant: -8),
+
+            clearOnExitCheck.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            clearOnExitCheck.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
 
             clearButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-            clearButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+            clearButton.centerYAnchor.constraint(equalTo: clearOnExitCheck.centerYAnchor),
         ])
 
         reload()
@@ -101,6 +110,10 @@ class InputHistoryPanel: NSPanel {
         let row = tableView.clickedRow
         guard row >= 0, row < filteredHistory.count else { return }
         onSelect?(filteredHistory[row])
+    }
+
+    @objc private func clearOnExitChanged(_ sender: NSButton) {
+        InputHistoryManager.shared.clearOnExit = (sender.state == .on)
     }
 
     @objc private func clearHistory() {

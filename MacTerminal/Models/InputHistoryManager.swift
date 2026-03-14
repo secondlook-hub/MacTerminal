@@ -1,13 +1,35 @@
 import Foundation
+import AppKit
 
 class InputHistoryManager {
     static let shared = InputHistoryManager()
     private let key = "inputHistory"
+    private let clearOnExitKey = "clearHistoryOnExit"
     private let maxItems = 500
 
     private(set) var history: [String] {
         get { UserDefaults.standard.stringArray(forKey: key) ?? [] }
         set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+
+    var clearOnExit: Bool {
+        get { UserDefaults.standard.bool(forKey: clearOnExitKey) }
+        set { UserDefaults.standard.set(newValue, forKey: clearOnExitKey) }
+    }
+
+    private init() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: NSApplication.willTerminateNotification,
+            object: nil
+        )
+    }
+
+    @objc private func appWillTerminate() {
+        if clearOnExit {
+            clear()
+        }
     }
 
     func add(_ command: String) {

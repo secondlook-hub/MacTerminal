@@ -86,9 +86,8 @@ struct MacTerminalApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About MacTerminal") {
                     let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
-                        .version: "\(marketing).\(build)"
+                        .version: marketing
                     ])
                 }
             }
