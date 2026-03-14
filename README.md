@@ -47,6 +47,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Rename Folder Sheet** — Improved folder rename UI with sheet dialog and keyboard support
 - **Full Disk Access Check** — Checks Full Disk Access permission on launch; shows setup guide and opens System Settings if not granted
 - **Korean IME Backspace Fix** — Single backspace deletes the last composing jamo (consonant) without requiring a second press
+- **Input History** — View and search all previously entered commands (View > Input History, Cmd+Y); double-click to re-execute
 
 ## Screenshots
 
@@ -76,6 +77,7 @@ Requires **Xcode 15+** and **macOS 13.0 Ventura** or later.
 | Cmd+Shift+D | Close Split View |
 | Cmd+F | Find |
 | Cmd+S | Save Shell Content |
+| Cmd+Y | Input History |
 | Cmd+K | Clear Scrollback |
 | Cmd+C | Copy (with selection) |
 | Cmd+V | Paste |
@@ -98,6 +100,7 @@ MacTerminal/
 │   ├── SettingsExporter.swift    # Settings export/import
 │   ├── TerminalTab.swift         # Tab & split pane state management
 │   ├── UpdateChecker.swift       # GitHub Releases update checker
+│   ├── InputHistoryManager.swift # Input history persistence
 │   └── WindowManager.swift       # Multi-window tracking
 ├── Terminal/
 │   ├── PseudoTerminal.swift      # PTY process management (forkpty)
@@ -111,6 +114,7 @@ MacTerminal/
     ├── NSTextAlignmentModifier.swift # NSTextField alignment helper
     ├── TabBarView.swift          # Tab bar with drag reordering
     ├── TerminalView.swift        # NSViewRepresentable terminal bridge
+    ├── InputHistoryPanel.swift   # Input history panel
     └── DetachedWindowContent.swift
 ```
 

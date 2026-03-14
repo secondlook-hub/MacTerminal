@@ -1056,6 +1056,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 }
                 if lineText.contains(cmd) {
                     screen.onCommandEntered?(cmd)
+                    InputHistoryManager.shared.add(cmd)
                 }
             }
             screen?.inputBuffer = ""

@@ -34,7 +34,9 @@ class UpdateChecker: ObservableObject {
     private let repo = "secondlook-hub/MacTerminal"
 
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        return "\(marketing).\(build)"
     }
 
     func checkForUpdates(manual: Bool = false) async {

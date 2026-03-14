@@ -31,6 +31,8 @@
 		AA0000000000000000000081 /* DirectoryTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000080 /* DirectoryTreeView.swift */; };
 		AA0000000000000000000041 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000042 /* ThemeManager.swift */; };
 		AA0000000000000000000044 /* SettingsExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000043 /* SettingsExporter.swift */; };
+		AA0000000000000000000090 /* InputHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000091 /* InputHistoryManager.swift */; };
+		AA0000000000000000000092 /* InputHistoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000093 /* InputHistoryPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +63,8 @@
 		AA0000000000000000000043 /* SettingsExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsExporter.swift; sourceTree = "<group>"; };
 		AA0000000000000000000064 /* NSTextAlignmentModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSTextAlignmentModifier.swift; sourceTree = "<group>"; };
 		AA0000000000000000000080 /* DirectoryTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryTreeView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000091 /* InputHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputHistoryManager.swift; sourceTree = "<group>"; };
+		AA0000000000000000000093 /* InputHistoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputHistoryPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +113,7 @@
 				AA000000000000000000003D /* CommandEditView.swift */,
 				AA0000000000000000000064 /* NSTextAlignmentModifier.swift */,
 				AA0000000000000000000080 /* DirectoryTreeView.swift */,
+				AA0000000000000000000093 /* InputHistoryPanel.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -126,6 +131,7 @@
 				AA000000000000000000003C /* CommandItem.swift */,
 				AA0000000000000000000042 /* ThemeManager.swift */,
 				AA0000000000000000000043 /* SettingsExporter.swift */,
+				AA0000000000000000000091 /* InputHistoryManager.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -239,6 +245,8 @@
 				AA0000000000000000000081 /* DirectoryTreeView.swift in Sources */,
 				AA0000000000000000000041 /* ThemeManager.swift in Sources */,
 				AA0000000000000000000044 /* SettingsExporter.swift in Sources */,
+				AA0000000000000000000090 /* InputHistoryManager.swift in Sources */,
+				AA0000000000000000000092 /* InputHistoryPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -386,7 +394,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -416,7 +424,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macterminal.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

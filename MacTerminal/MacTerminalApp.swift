@@ -83,6 +83,15 @@ struct MacTerminalApp: App {
         }
         .defaultSize(width: 1100, height: 650)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About MacTerminal") {
+                    let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+                    NSApplication.shared.orderFrontStandardAboutPanel(options: [
+                        .version: "\(marketing).\(build)"
+                    ])
+                }
+            }
             CommandGroup(after: .newItem) {
                 Button("Save Shell Content...") {
                     saveShellContent()
@@ -172,6 +181,11 @@ struct MacTerminalApp: App {
                 Divider()
             }
             CommandGroup(after: .toolbar) {
+                Button("Input History") {
+                    showInputHistory()
+                }
+                .keyboardShortcut("y", modifiers: .command)
+                Divider()
                 Toggle("Directory Tree", isOn: $showDirectoryTree)
                 Divider()
                 Menu("Theme") {
@@ -289,6 +303,13 @@ struct MacTerminalApp: App {
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             tab.startRecording(url: url)
+        }
+    }
+
+    private func showInputHistory() {
+        InputHistoryPanel.show { command in
+            guard let tab = focusedTab else { return }
+            tab.terminal.write(command + "\r")
         }
     }
 
