@@ -234,6 +234,19 @@ struct MacTerminalApp: App {
                     }
                 ))
                 Divider()
+                Button("Text Bigger") {
+                    Self.findDrawView()?.increaseFontSize(nil)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+                Button("Text Smaller") {
+                    Self.findDrawView()?.decreaseFontSize(nil)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                Button("Text Default Size") {
+                    Self.findDrawView()?.resetFontSize(nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+                Divider()
                 Button("Change Font...") {
                     Self.findDrawView()?.showFontPanel(nil)
                 }

@@ -21,7 +21,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Logical Line Tracking** — Wrapped lines are treated as a single logical line for line numbers and timestamps
 - **Settings Export/Import** — Export and import connections, commands, theme, and color settings (File > Settings)
 - **Folder State Persistence** — Sidebar folder expanded/collapsed state remembered across restarts
-- **Font Zoom** — Cmd + Mouse Wheel to resize terminal font instantly (8pt–72pt)
+- **Font Zoom** — Cmd + Mouse Wheel or View menu (Text Bigger/Smaller/Default Size) to resize terminal font instantly (8pt–72pt, Cmd+Plus/Minus/0)
 - **NFC Normalization** — File drag & drop and clipboard paste use NFC Unicode form (fixes Korean filenames)
 - **Text Wrap Toggle** — Turn text wrapping on/off with horizontal scrolling (View > Text Wrap)
 - **Smart Double-Click** — Double-click selects text between 2+ consecutive spaces (selects phrases, not just words)
@@ -83,6 +83,9 @@ Requires **Xcode 15+** and **macOS 13.0 Ventura** or later.
 | Cmd+K | Clear Scrollback |
 | Cmd+C | Copy (with selection) |
 | Cmd+V | Paste |
+| Cmd+Plus | Text Bigger |
+| Cmd+Minus | Text Smaller |
+| Cmd+0 | Text Default Size |
 | Cmd+Scroll | Font Zoom In/Out |
 | Right-Click | Copy selection / Paste (no selection) |
 

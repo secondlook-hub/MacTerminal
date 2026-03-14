@@ -674,6 +674,22 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         super.scrollWheel(with: event)
     }
 
+    @objc func increaseFontSize(_ sender: Any?) {
+        let newSize = min(72, defaultFont.pointSize + 1)
+        guard newSize != defaultFont.pointSize else { return }
+        applyFontSize(newSize)
+    }
+
+    @objc func decreaseFontSize(_ sender: Any?) {
+        let newSize = max(8, defaultFont.pointSize - 1)
+        guard newSize != defaultFont.pointSize else { return }
+        applyFontSize(newSize)
+    }
+
+    @objc func resetFontSize(_ sender: Any?) {
+        applyFontSize(13)
+    }
+
     private func applyFontSize(_ size: CGFloat) {
         if let name = UserDefaults.standard.string(forKey: "terminalFontName"),
            let f = NSFont(name: name, size: size) {
