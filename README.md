@@ -50,6 +50,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Input History** — View and search all previously entered commands (View > Input History, Cmd+Y); double-click to re-execute; optional auto-clear on app exit
 - **Developer Website** — About panel shows developer blog link; Help menu includes "Visit Developer Website" to open in browser
 - **Numeric Keypad Enter** — Numeric keypad Enter key works the same as the main Return key
+- **Preserve Scrollback on Clear** — `clear` command and `\e[3J` only clear the visible screen; scrollback buffer is preserved (scroll up to see history)
 
 ## Screenshots
 

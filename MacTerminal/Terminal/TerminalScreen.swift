@@ -568,12 +568,9 @@ class TerminalScreen {
         case 2:
             for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
         case 3:
-            // Erase display + clear scrollback
+            // Erase display only; preserve scrollback buffer
             for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
             gridWrapped = Array(repeating: false, count: rows)
-            scrollback.removeAll()
-            scrollbackTimestamps.removeAll()
-            scrollbackWrapped.removeAll()
         default: break
         }
     }
