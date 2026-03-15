@@ -1060,7 +1060,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let pre = appCursor ? "\u{1b}O" : "\u{1b}["
 
         switch event.keyCode {
-        case 36:
+        case 36, 76:
             let cmd = screen?.inputBuffer.trimmingCharacters(in: .whitespaces) ?? ""
             if !cmd.isEmpty, let screen = screen {
                 // Only show in tab if the input was echoed on screen

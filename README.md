@@ -49,6 +49,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Korean IME Backspace Fix** — Single backspace deletes the last composing jamo (consonant) without requiring a second press
 - **Input History** — View and search all previously entered commands (View > Input History, Cmd+Y); double-click to re-execute; optional auto-clear on app exit
 - **Developer Website** — About panel shows developer blog link; Help menu includes "Visit Developer Website" to open in browser
+- **Numeric Keypad Enter** — Numeric keypad Enter key works the same as the main Return key
 
 ## Screenshots
 
