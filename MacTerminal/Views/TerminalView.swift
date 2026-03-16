@@ -821,6 +821,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     && screenRow == screen.cursorRow
                     && col == screen.cursorCol
                     && screen.showCursor && cursorOn
+                    && !hasMarkedText()
                 let isSel = isCellSelected(line: lineIdx, col: col)
                 let matchType = searchMatchType(line: lineIdx, col: col)
 
@@ -945,12 +946,28 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
         let y = CGFloat(sbCount + screen.cursorRow) * cellHeight
 
+        // Calculate width: each character may be wide (2 cells)
+        var charWidths: CGFloat = 0
+        for ch in text {
+            let isWide = ch.unicodeScalars.first.map { TerminalScreen.isWideChar($0.value) } ?? false
+            charWidths += isWide ? cellWidth * 2 : cellWidth
+        }
+
+        // Fill background behind the marked text (clear cursor area first)
         let tm = ThemeManager.shared
+        let bgRect = NSRect(x: x, y: y, width: charWidths, height: cellHeight)
+        tm.markedTextBG.setFill()
+        bgRect.fill()
+
+        // Draw underline at the bottom of the cell
+        let underlineRect = NSRect(x: x, y: y + cellHeight - 1, width: charWidths, height: 1)
+        tm.markedTextFG.setFill()
+        underlineRect.fill()
+
+        // Draw the text
         let attrs: [NSAttributedString.Key: Any] = [
             .font: defaultFont,
             .foregroundColor: tm.markedTextFG,
-            .backgroundColor: tm.markedTextBG,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
         let attrStr = NSAttributedString(string: text, attributes: attrs)
         attrStr.draw(at: NSPoint(x: x, y: y))
@@ -1061,6 +1078,15 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
         switch event.keyCode {
         case 36, 76:
+            // If IME is composing, commit the composition first
+            if hasMarkedText() {
+                inputContext?.discardMarkedText()
+                if let marked = markedString {
+                    markedString = nil
+                    screen?.inputBuffer += marked
+                    terminal?.write(marked)
+                }
+            }
             let cmd = screen?.inputBuffer.trimmingCharacters(in: .whitespaces) ?? ""
             if !cmd.isEmpty, let screen = screen {
                 // Only show in tab if the input was echoed on screen
@@ -1386,7 +1412,8 @@ extension TerminalDrawView: NSTextInputClient {
         let sbCount = screen.scrollback.count
         let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
         let y = CGFloat(sbCount + screen.cursorRow) * cellHeight
-        let rectInView = NSRect(x: x, y: y, width: cellWidth, height: cellHeight)
+        // Position the IME candidate window just below the cursor cell
+        let rectInView = NSRect(x: x, y: y + cellHeight, width: cellWidth, height: 0)
         let rectInWindow = convert(rectInView, to: nil)
         return win.convertToScreen(rectInWindow)
     }

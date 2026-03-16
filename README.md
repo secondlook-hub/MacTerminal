@@ -51,6 +51,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Developer Website** — About panel shows developer blog link; Help menu includes "Visit Developer Website" to open in browser
 - **Numeric Keypad Enter** — Numeric keypad Enter key works the same as the main Return key
 - **Preserve Scrollback on Clear** — `clear` command and `\e[3J` only clear the visible screen; scrollback buffer is preserved (scroll up to see history)
+- **Inline Korean IME** — Composing Hangul appears inline at the cursor position (like macOS Terminal.app) instead of a separate floating window
 
 ## Screenshots
 
