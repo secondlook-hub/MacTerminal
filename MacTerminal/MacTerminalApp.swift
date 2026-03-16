@@ -220,10 +220,14 @@ struct MacTerminalApp: App {
                     }
                 ))
                 Toggle("Show Timestamp", isOn: Binding(
-                    get: { showTimestamp },
+                    get: { focusedTab?.showTimestamp ?? showTimestamp },
                     set: { newValue in
-                        showTimestamp = newValue
-                        Self.updateAllTimestampVisibility(newValue)
+                        if let tab = focusedTab {
+                            tab.showTimestamp = newValue
+                        } else {
+                            showTimestamp = newValue
+                            Self.updateAllTimestampVisibility(newValue)
+                        }
                     }
                 ))
                 Toggle("Text Wrap", isOn: Binding(

@@ -77,6 +77,13 @@ struct TerminalPaneRepresentable: NSViewRepresentable {
             }
         }
         context.coordinator.lastFocusedState = isFocused
+
+        if nsView.drawView.showTimestamp != tab.showTimestamp {
+            nsView.drawView.showTimestamp = tab.showTimestamp
+            nsView.drawView.updateTimestampLayout()
+            nsView.drawView.needsDisplay = true
+            nsView.refreshDisplay()
+        }
     }
 
     class Coordinator {

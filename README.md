@@ -17,7 +17,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Background Tab Updates** — Tabs continue processing data even when not focused, with blink indicator for unread output
 - **Themes** — Dark, Gray, and Light themes with sidebar support (View > Theme)
 - **Line Numbers** — Toggle line numbers on the left side (View > Show Line Number)
-- **Timestamps** — Per-line timestamps on the right side (View > Show Timestamp)
+- **Timestamps** — Per-line timestamps on the right side, independent per tab/window (View > Show Timestamp)
 - **Logical Line Tracking** — Wrapped lines are treated as a single logical line for line numbers and timestamps
 - **Settings Export/Import** — Export and import connections, commands, theme, and color settings (File > Settings)
 - **Folder State Persistence** — Sidebar folder expanded/collapsed state remembered across restarts
@@ -52,6 +52,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Numeric Keypad Enter** — Numeric keypad Enter key works the same as the main Return key
 - **Preserve Scrollback on Clear** — `clear` command and `\e[3J` only clear the visible screen; scrollback buffer is preserved (scroll up to see history)
 - **Inline Korean IME** — Composing Hangul appears inline at the cursor position (like macOS Terminal.app) instead of a separate floating window
+- **Per-Tab Timestamps** — Timestamp visibility is independent per tab and window; toggle affects only the current tab
 
 ## Screenshots
 

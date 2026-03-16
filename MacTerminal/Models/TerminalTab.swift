@@ -6,6 +6,7 @@ class TerminalTab: Identifiable, ObservableObject {
     @Published var title: String
     @Published var windowTitle: String
     @Published var isRecording = false
+    @Published var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
     @Published var focusedPaneID: UUID
     var isActive = false
     var hasUpdate: Bool = false {
