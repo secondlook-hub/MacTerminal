@@ -123,6 +123,71 @@ class SSHBookmarkStore: ObservableObject {
         save()
     }
 
+    func canMoveUp(id: UUID) -> Bool {
+        guard let loc = findLocation(of: id) else { return false }
+        return loc.index > 0
+    }
+
+    func canMoveDown(id: UUID) -> Bool {
+        guard let loc = findLocation(of: id) else { return false }
+        let siblings: [SidebarItem]
+        if let parentID = loc.parentID, let parent = findItemInTree(id: parentID, in: rootItems) {
+            siblings = parent.children ?? []
+        } else {
+            siblings = rootItems
+        }
+        return loc.index < siblings.count - 1
+    }
+
+    func moveUp(id: UUID) {
+        guard let loc = findLocation(of: id), loc.index > 0 else { return }
+        if let parentID = loc.parentID {
+            swapInChildren(parentID: parentID, index1: loc.index, index2: loc.index - 1)
+        } else {
+            rootItems.swapAt(loc.index, loc.index - 1)
+        }
+        rootItems = rootItems
+        save()
+    }
+
+    func moveDown(id: UUID) {
+        guard let loc = findLocation(of: id) else { return }
+        let siblings: [SidebarItem]
+        if let parentID = loc.parentID, let parent = findItemInTree(id: parentID, in: rootItems) {
+            siblings = parent.children ?? []
+        } else {
+            siblings = rootItems
+        }
+        guard loc.index < siblings.count - 1 else { return }
+        if let parentID = loc.parentID {
+            swapInChildren(parentID: parentID, index1: loc.index, index2: loc.index + 1)
+        } else {
+            rootItems.swapAt(loc.index, loc.index + 1)
+        }
+        rootItems = rootItems
+        save()
+    }
+
+    private func swapInChildren(parentID: UUID, index1: Int, index2: Int) {
+        swapInTree(parentID: parentID, index1: index1, index2: index2, in: &rootItems)
+    }
+
+    @discardableResult
+    private func swapInTree(parentID: UUID, index1: Int, index2: Int, in items: inout [SidebarItem]) -> Bool {
+        for i in items.indices {
+            if items[i].id == parentID, items[i].children != nil {
+                items[i].children!.swapAt(index1, index2)
+                return true
+            }
+            if items[i].children != nil {
+                if swapInTree(parentID: parentID, index1: index1, index2: index2, in: &items[i].children!) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     func findBookmark(byID id: UUID?) -> SSHBookmark? {
         guard let id = id else { return nil }
         return findBookmarkInTree(id: id, in: rootItems)

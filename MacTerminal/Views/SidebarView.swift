@@ -121,6 +121,15 @@ struct SidebarView: View {
                     .contextMenu {
                         Button("Run") { onRunCommand(cmd) }
                         Divider()
+                        Button("Move Up") {
+                            commandStore.moveUp(id: cmd.id)
+                        }
+                        .disabled(!commandStore.canMoveUp(id: cmd.id))
+                        Button("Move Down") {
+                            commandStore.moveDown(id: cmd.id)
+                        }
+                        .disabled(!commandStore.canMoveDown(id: cmd.id))
+                        Divider()
                         Button("Edit...") { editingCommand = cmd }
                         Button("Delete", role: .destructive) {
                             commandStore.delete(id: cmd.id)
@@ -231,6 +240,15 @@ struct SidebarView: View {
             bookmarkStore.addFolder(name: "New Folder", parentID: item.id)
         }
         Divider()
+        Button("Move Up") {
+            bookmarkStore.moveUp(id: item.id)
+        }
+        .disabled(!bookmarkStore.canMoveUp(id: item.id))
+        Button("Move Down") {
+            bookmarkStore.moveDown(id: item.id)
+        }
+        .disabled(!bookmarkStore.canMoveDown(id: item.id))
+        Divider()
         Button("Rename...") {
             renameFolderName = item.name
             renamingFolderID = item.id
@@ -244,6 +262,15 @@ struct SidebarView: View {
     @ViewBuilder
     private func bookmarkContextMenu(_ bookmark: SSHBookmark) -> some View {
         Button("Connect") { onConnect(bookmark) }
+        Divider()
+        Button("Move Up") {
+            bookmarkStore.moveUp(id: bookmark.id)
+        }
+        .disabled(!bookmarkStore.canMoveUp(id: bookmark.id))
+        Button("Move Down") {
+            bookmarkStore.moveDown(id: bookmark.id)
+        }
+        .disabled(!bookmarkStore.canMoveDown(id: bookmark.id))
         Divider()
         Button("Edit...") { editingBookmark = bookmark }
         Button("Delete", role: .destructive) {

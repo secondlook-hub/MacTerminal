@@ -53,6 +53,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Preserve Scrollback on Clear** — `clear` command and `\e[3J` only clear the visible screen; scrollback buffer is preserved (scroll up to see history)
 - **Inline Korean IME** — Composing Hangul appears inline at the cursor position (like macOS Terminal.app) instead of a separate floating window
 - **Per-Tab Timestamps** — Timestamp visibility is independent per tab and window; toggle affects only the current tab
+- **Reorder Items** — Move Up/Move Down context menu for connections and commands list items
 
 ## Screenshots
 

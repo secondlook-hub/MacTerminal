@@ -67,4 +67,26 @@ class CommandStore: ObservableObject {
         commands.move(fromOffsets: fromOffsets, toOffset: toOffset)
         save()
     }
+
+    func canMoveUp(id: UUID) -> Bool {
+        guard let idx = commands.firstIndex(where: { $0.id == id }) else { return false }
+        return idx > 0
+    }
+
+    func canMoveDown(id: UUID) -> Bool {
+        guard let idx = commands.firstIndex(where: { $0.id == id }) else { return false }
+        return idx < commands.count - 1
+    }
+
+    func moveUp(id: UUID) {
+        guard let idx = commands.firstIndex(where: { $0.id == id }), idx > 0 else { return }
+        commands.swapAt(idx, idx - 1)
+        save()
+    }
+
+    func moveDown(id: UUID) {
+        guard let idx = commands.firstIndex(where: { $0.id == id }), idx < commands.count - 1 else { return }
+        commands.swapAt(idx, idx + 1)
+        save()
+    }
 }
