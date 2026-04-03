@@ -94,7 +94,8 @@ indirect enum SplitNode: Equatable {
             let newSecond = second.removingPane(id)
             if newFirst == nil { return newSecond }
             if newSecond == nil { return newFirst }
-            return .split(axis: axis, first: newFirst!, second: newSecond!)
+            guard let first = newFirst, let second = newSecond else { return nil }
+            return .split(axis: axis, first: first, second: second)
         }
     }
 }

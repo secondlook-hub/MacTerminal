@@ -5,12 +5,20 @@ class PseudoTerminal: ObservableObject {
     private var childPID: pid_t = -1
     private var readSource: DispatchSourceRead?
 
-    // UTF-8 remainder bytes from previous read (accessed only from read queue)
+    /// Serial queue protecting mutable state accessed from the read handler.
+    private let readQueue = DispatchQueue(label: "com.macterminal.pty.read")
+
+    // UTF-8 remainder bytes from previous read (accessed only from readQueue)
     private var utf8Remainder = Data()
 
     /// Password to auto-send when an SSH password prompt is detected (one-shot).
-    var pendingPassword: String?
-    /// Buffer accumulating recent output for prompt detection (accessed only from read queue).
+    /// Set from main thread, consumed from readQueue.
+    private var _pendingPassword: String?
+    var pendingPassword: String? {
+        get { readQueue.sync { _pendingPassword } }
+        set { readQueue.sync { _pendingPassword = newValue } }
+    }
+    /// Buffer accumulating recent output for prompt detection (accessed only from readQueue).
     private var passwordBuffer = ""
 
     /// Shell integration directory for OSC 7 support (created once lazily)
@@ -88,7 +96,7 @@ class PseudoTerminal: ObservableObject {
 
     private func startReading() {
         let fd = masterFD
-        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .global(qos: .userInteractive))
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: readQueue)
         source.setEventHandler { [weak self] in
             guard let self = self else { return }
             var buffer = [UInt8](repeating: 0, count: 8192)
@@ -107,7 +115,7 @@ class PseudoTerminal: ObservableObject {
                 self.utf8Remainder = remainder
 
                 // Auto-password: detect SSH password prompt and send stored password
-                if let password = self.pendingPassword,
+                if let password = self._pendingPassword,
                    let text = String(data: complete, encoding: .utf8) {
                     self.passwordBuffer += text
                     // Keep buffer from growing unbounded (last 256 chars is enough)
@@ -116,7 +124,7 @@ class PseudoTerminal: ObservableObject {
                     }
                     if self.passwordBuffer.range(of: "password:", options: .caseInsensitive) != nil {
                         let payload = password + "\r"
-                        self.pendingPassword = nil
+                        self._pendingPassword = nil
                         self.passwordBuffer = ""
                         self.writeData(Data(payload.utf8))
                     }
@@ -212,7 +220,11 @@ class PseudoTerminal: ObservableObject {
     func stop() {
         let source = readSource
         readSource = nil
-        utf8Remainder = Data()
+        readQueue.sync {
+            utf8Remainder = Data()
+            passwordBuffer = ""
+            _pendingPassword = nil
+        }
 
         let pid = childPID
         let fd = masterFD

@@ -54,6 +54,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Inline Korean IME** — Composing Hangul appears inline at the cursor position (like macOS Terminal.app) instead of a separate floating window
 - **Per-Tab Timestamps** — Timestamp visibility is independent per tab and window; toggle affects only the current tab
 - **Reorder Items** — Move Up/Move Down context menu for connections and commands list items
+- **Crash Stability Fix** — Eliminated force-unwrap crashes on empty pane lists, fixed race conditions in PTY read handler with serial queue synchronization, thread-safe onChange callbacks
 
 ## Screenshots
 

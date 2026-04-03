@@ -22,8 +22,13 @@ class TerminalTab: Identifiable, ObservableObject {
     var screen: TerminalScreen { focusedPane.screen }
 
     var focusedPane: TerminalPane {
-        rootNode.node.findPane(focusedPaneID)
-            ?? rootNode.node.allPanes().first!
+        if let pane = rootNode.node.findPane(focusedPaneID) {
+            return pane
+        }
+        let panes = rootNode.node.allPanes()
+        let fallback = panes.first ?? TerminalPane()
+        focusedPaneID = fallback.id
+        return fallback
     }
 
     init(title: String) {
@@ -43,9 +48,9 @@ class TerminalTab: Identifiable, ObservableObject {
             DispatchQueue.main.async { self?.title = cmd }
         }
         pane.screen.onChange = { [weak self] in
-            guard let self = self, !self.isActive else { return }
             DispatchQueue.main.async { [weak self] in
-                self?.hasUpdate = true
+                guard let self = self, !self.isActive else { return }
+                self.hasUpdate = true
             }
         }
     }
