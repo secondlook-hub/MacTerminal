@@ -743,12 +743,34 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil && blinkTimer == nil {
+        if window == nil {
+            // View is being detached — stop the timer so it doesn't keep firing
+            // (and holding allocations) for invisible/torn-down panes.
+            blinkTimer?.invalidate()
+            blinkTimer = nil
+        } else if blinkTimer == nil {
             blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                self?.cursorOn.toggle()
-                self?.needsDisplay = true
+                guard let self = self else { return }
+                // Skip work when the window isn't key — the cursor is rendered
+                // hollow and the screen isn't visible, so toggling state just burns CPU.
+                guard self.window?.isKeyWindow == true else { return }
+                self.cursorOn.toggle()
+                self.invalidateCursorCell()
             }
         }
+    }
+
+    /// Mark only the cursor cell as needing redraw. The blink toggles every 500ms;
+    /// invalidating the entire visible area on every tick churns NSAttributedString
+    /// allocations and creates measurable memory pressure over hours.
+    private func invalidateCursorCell() {
+        guard let screen = screen else { return }
+        let row = screen.scrollback.count + screen.cursorRow
+        let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
+        let y = CGFloat(row) * cellHeight
+        // Width = 2 cells in case a wide character sits under the cursor.
+        let rect = NSRect(x: x, y: y, width: cellWidth * 2, height: cellHeight)
+        setNeedsDisplay(rect)
     }
 
     // MARK: - Drawing
@@ -1368,7 +1390,15 @@ extension TerminalDrawView: NSTextInputClient {
         }
 
         markedString = nil
-        screen?.inputBuffer += str
+        if let screen = screen {
+            screen.inputBuffer += str
+            // inputBuffer is reset on Enter, but TUI apps (vim, less, etc.) may
+            // never let an Enter through to the shell-prompt path — cap it to
+            // prevent unbounded String growth across long sessions.
+            if screen.inputBuffer.count > 4096 {
+                screen.inputBuffer = String(screen.inputBuffer.suffix(4096))
+            }
+        }
         terminal?.write(str)
         needsDisplay = true
     }

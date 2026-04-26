@@ -86,6 +86,11 @@ class TerminalScreen {
             recordingPendingCR = false
         }
         recordingLineBuffer += text
+        // Guard against unbounded growth when the shell emits a very long line
+        // without a newline (e.g. progress bars, hex dumps without LF).
+        if recordingLineBuffer.count > 16384 {
+            recordingLineBuffer = String(recordingLineBuffer.suffix(16384))
+        }
     }
 
     private func recordFlushLine() {
@@ -126,6 +131,31 @@ class TerminalScreen {
         NSColor(red: 0.4, green: 1.0, blue: 1.0, alpha: 1),
         NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1),
     ]
+
+    /// Cache for 24-bit (truecolor) ANSI sequences. Each Cell stores fg/bg as
+    /// strong NSColor references; without dedup, every styled glyph in scrollback
+    /// can pin a unique NSColor instance. NSCache evicts under memory pressure.
+    private static let rgbCache: NSCache<NSNumber, NSColor> = {
+        let c = NSCache<NSNumber, NSColor>()
+        c.countLimit = 4096
+        return c
+    }()
+
+    static func rgbColor(_ r: Int, _ g: Int, _ b: Int) -> NSColor {
+        let r8 = max(0, min(255, r))
+        let g8 = max(0, min(255, g))
+        let b8 = max(0, min(255, b))
+        let key = NSNumber(value: (r8 << 16) | (g8 << 8) | b8)
+        if let cached = rgbCache.object(forKey: key) { return cached }
+        let color = NSColor(
+            red: CGFloat(r8) / 255,
+            green: CGFloat(g8) / 255,
+            blue: CGFloat(b8) / 255,
+            alpha: 1
+        )
+        rgbCache.setObject(color, forKey: key)
+        return color
+    }
 
     // MARK: - Init
 
@@ -648,14 +678,14 @@ class TerminalScreen {
             case 38:
                 if i+2 < params.count && params[i+1] == 5 { currentFG = Self.color256(params[i+2]); i += 2 }
                 else if i+4 < params.count && params[i+1] == 2 {
-                    currentFG = NSColor(red: CGFloat(params[i+2])/255, green: CGFloat(params[i+3])/255, blue: CGFloat(params[i+4])/255, alpha: 1); i += 4
+                    currentFG = Self.rgbColor(params[i+2], params[i+3], params[i+4]); i += 4
                 }
             case 39: currentFG = Self.defaultFG
             case 40...47: currentBG = Self.ansiColors[c - 40]
             case 48:
                 if i+2 < params.count && params[i+1] == 5 { currentBG = Self.color256(params[i+2]); i += 2 }
                 else if i+4 < params.count && params[i+1] == 2 {
-                    currentBG = NSColor(red: CGFloat(params[i+2])/255, green: CGFloat(params[i+3])/255, blue: CGFloat(params[i+4])/255, alpha: 1); i += 4
+                    currentBG = Self.rgbColor(params[i+2], params[i+3], params[i+4]); i += 4
                 }
             case 49: currentBG = .clear
             case 90...97:  currentFG = Self.brightColors[c - 90]

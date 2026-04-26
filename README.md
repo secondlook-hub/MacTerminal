@@ -55,6 +55,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Per-Tab Timestamps** — Timestamp visibility is independent per tab and window; toggle affects only the current tab
 - **Reorder Items** — Move Up/Move Down context menu for connections and commands list items
 - **Crash Stability Fix** — Eliminated force-unwrap crashes on empty pane lists, fixed race conditions in PTY read handler with serial queue synchronization, thread-safe onChange callbacks
+- **Memory Footprint Reduction** — Cursor blink now redraws only the cursor cell (not the whole view) and pauses while the window is inactive; 24-bit ANSI colors are deduped via NSCache; theme colors are computed once per theme change instead of on every property access; `inputBuffer` and recording-line buffers are bounded to prevent slow growth across long sessions
 
 ## Screenshots
 
