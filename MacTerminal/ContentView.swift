@@ -66,12 +66,7 @@ struct ContentView: View {
             HSplitView {
                 VStack(spacing: 0) {
                     TabBarView(tabManager: tabManager)
-                    if let tab = tabManager.selectedTab {
-                        SplitTerminalView(nodeRef: tab.rootNode, tab: tab)
-                            .id(tab.id)
-                    } else {
-                        Color(nsColor: .terminalBG)
-                    }
+                    TerminalDetailHost(tabManager: tabManager)
                 }
                 if showDirectoryTree {
                     DirectoryTreeView(
@@ -177,7 +172,7 @@ struct ContentView: View {
     }
 
     private static func findSubview<T: NSView>(in view: NSView?) -> T? {
-        guard let view = view else { return nil }
+        guard let view = view, !view.isHidden else { return nil }
         if let v = view as? T { return v }
         for sub in view.subviews {
             if let found: T = findSubview(in: sub) { return found }

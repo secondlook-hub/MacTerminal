@@ -418,8 +418,33 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     static let basePaddingLeft: CGFloat = 4
     var paddingLeft: CGFloat = 4
     var paddingBottom: CGFloat  // one line height, set after cellHeight
-    var defaultFont: NSFont
-    var boldFont: NSFont
+    var defaultFont: NSFont {
+        didSet { italicFont = nil; boldItalicFont = nil }
+    }
+    var boldFont: NSFont {
+        didSet { boldItalicFont = nil }
+    }
+    // Lazy variants: NSFontManager.convert is surprisingly hot when scrollback
+    // is full of styled output (CI logs, syntax-highlighted source). Cache them.
+    private var italicFont: NSFont?
+    private var boldItalicFont: NSFont?
+
+    private func styledFont(bold: Bool, italic: Bool) -> NSFont {
+        switch (bold, italic) {
+        case (false, false): return defaultFont
+        case (true, false):  return boldFont
+        case (false, true):
+            if let f = italicFont { return f }
+            let f = NSFontManager.shared.convert(defaultFont, toHaveTrait: .italicFontMask)
+            italicFont = f
+            return f
+        case (true, true):
+            if let f = boldItalicFont { return f }
+            let f = NSFontManager.shared.convert(boldFont, toHaveTrait: .italicFontMask)
+            boldItalicFont = f
+            return f
+        }
+    }
     var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
     private(set) var timestampWidth: CGFloat = 0
     private lazy var timestampFormatter: DateFormatter = {
@@ -882,30 +907,24 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     fg = fg.withAlphaComponent(0.5)
                 }
 
-                var font: NSFont
-                if cell.bold && cell.italic {
-                    font = NSFontManager.shared.convert(boldFont, toHaveTrait: .italicFontMask)
-                } else if cell.italic {
-                    font = NSFontManager.shared.convert(defaultFont, toHaveTrait: .italicFontMask)
-                } else if cell.bold {
-                    font = boldFont
+                let font = styledFont(bold: cell.bold, italic: cell.italic)
+                let glyph = String(ch) as NSString
+                if cell.underline || cell.strikethrough {
+                    var attrs: [NSAttributedString.Key: Any] = [
+                        .font: font,
+                        .foregroundColor: fg,
+                    ]
+                    if cell.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                    if cell.strikethrough { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                    glyph.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
                 } else {
-                    font = defaultFont
+                    // Hot path: NSString.draw avoids the per-glyph
+                    // NSAttributedString allocation.
+                    glyph.draw(at: NSPoint(x: x, y: y), withAttributes: [
+                        .font: font,
+                        .foregroundColor: fg,
+                    ])
                 }
-
-                var attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: fg,
-                ]
-                if cell.underline {
-                    attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
-                }
-                if cell.strikethrough {
-                    attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-                }
-
-                let s = NSAttributedString(string: String(ch), attributes: attrs)
-                s.draw(at: NSPoint(x: x, y: y))
 
                 col += cell.wide ? 2 : 1
             }

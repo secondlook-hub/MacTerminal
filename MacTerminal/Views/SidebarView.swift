@@ -69,6 +69,10 @@ struct SidebarView: View {
     // MARK: - Connections Tab
 
     private var connectionsTab: some View {
+        // Rows wrap their content in Button(.plain) so the first click fires
+        // selection immediately (Button uses mouseUp, no double-click wait).
+        // The double-tap detector runs in parallel via simultaneousGesture, so
+        // it doesn't block or delay the single-click path.
         List {
             ForEach(bookmarkStore.rootItems) { item in
                 SidebarTreeItemView(
@@ -112,13 +116,24 @@ struct SidebarView: View {
     private var commandsTab: some View {
         List {
             ForEach(commandStore.commands) { cmd in
-                CommandRow(command: cmd)
-                    .tag(cmd.id)
-                    .listRowBackground(commandRowBackground(for: cmd.id))
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedCommandID = cmd.id }
-                    .gesture(TapGesture(count: 2).onEnded { onRunCommand(cmd) })
-                    .contextMenu {
+                Button {
+                    selectedCommandID = cmd.id
+                } label: {
+                    CommandRow(command: cmd)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(commandRowBackground(for: cmd.id))
+                // Double-tap to run, run in parallel so it doesn't gate the
+                // Button's single click.
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded {
+                        selectedCommandID = cmd.id
+                        onRunCommand(cmd)
+                    }
+                )
+                .contextMenu {
                         Button("Run") { onRunCommand(cmd) }
                         Divider()
                         Button("Move Up") {
@@ -425,32 +440,44 @@ struct SidebarTreeItemView<FolderMenu: View, BookmarkMenu: View>: View {
     }
 
     private var rowContent: some View {
-        SidebarItemRow(item: item)
-            .tag(item.id)
-            .listRowBackground(itemRowBackground(for: item.id))
-            .contentShape(Rectangle())
-            .onTapGesture { selectedItemID = item.id }
-            .gesture(TapGesture(count: 2).onEnded {
+        // Button(.plain) gives instant single-click selection (fires on
+        // mouseUp without waiting to disambiguate against a double tap).
+        // The double-tap detector runs in parallel via simultaneousGesture
+        // and also updates selection so the row stays highlighted after
+        // the connection is launched.
+        Button {
+            selectedItemID = item.id
+        } label: {
+            SidebarItemRow(item: item)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(itemRowBackground(for: item.id))
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                selectedItemID = item.id
                 if let bm = item.bookmark, let onConnect = onConnect {
                     onConnect(bm)
                 }
-            })
-            .onDrag {
-                draggedItemID = item.id
-                return NSItemProvider(object: item.id.uuidString as NSString)
             }
-            .onDrop(of: [.plainText], delegate: SidebarDropDelegate(
-                targetItem: item,
-                bookmarkStore: bookmarkStore,
-                draggedItemID: $draggedItemID
-            ))
-            .contextMenu {
-                if item.isFolder {
-                    folderContextMenu(item)
-                } else if let bm = item.bookmark {
-                    bookmarkContextMenu(bm)
-                }
+        )
+        .onDrag {
+            draggedItemID = item.id
+            return NSItemProvider(object: item.id.uuidString as NSString)
+        }
+        .onDrop(of: [.plainText], delegate: SidebarDropDelegate(
+            targetItem: item,
+            bookmarkStore: bookmarkStore,
+            draggedItemID: $draggedItemID
+        ))
+        .contextMenu {
+            if item.isFolder {
+                folderContextMenu(item)
+            } else if let bm = item.bookmark {
+                bookmarkContextMenu(bm)
             }
+        }
     }
 }
 

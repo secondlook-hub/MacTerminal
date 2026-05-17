@@ -57,6 +57,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Crash Stability Fix** — Eliminated force-unwrap crashes on empty pane lists, fixed race conditions in PTY read handler with serial queue synchronization, thread-safe onChange callbacks
 - **Memory Footprint Reduction** — Cursor blink now redraws only the cursor cell (not the whole view) and pauses while the window is inactive; 24-bit ANSI colors are deduped via NSCache; theme colors are computed once per theme change instead of on every property access; `inputBuffer` and recording-line buffers are bounded to prevent slow growth across long sessions
 - **Wrap-Aware Copy** — Copying a selection that spans soft-wrapped lines pastes as a single logical line in other editors; line-wrap boundaries no longer inject spurious newlines
+- **Native-Speed UI** — Tab switches reuse cached terminal views (scroll position, font, find-bar state preserved); the tab bar updates incrementally instead of rebuilding; PTY output is coalesced per runloop turn; sidebar list selection is instant via `Button(.plain)` + parallel double-tap; bookmark/command saves are debounced on a background queue; italic/bold-italic fonts are cached; plain glyphs draw without per-cell `NSAttributedString` allocation. Background-tab `hasUpdate` no longer broadcasts through `ObservableObject`, eliminating a per-PTY-chunk SwiftUI re-render storm
 
 ## Screenshots
 

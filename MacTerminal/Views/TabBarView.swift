@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 extension NSPasteboard.PasteboardType {
     static let terminalTab = NSPasteboard.PasteboardType("com.macterminal.tab-drag")
@@ -20,7 +21,7 @@ struct TabBarView: NSViewRepresentable {
 
     func updateNSView(_ nsView: TabBarNSView, context: Context) {
         context.coordinator.tabManager = tabManager
-        nsView.reloadTabs()
+        nsView.syncTabs()
     }
 
     class Coordinator {
@@ -37,6 +38,13 @@ class TabBarNSView: NSView {
     private let plusButton = NSButton()
     private var themeObserver: NSObjectProtocol?
 
+    // Cache items by tab id so we can update in place instead of recreating
+    // every tab view on each manager publish. Rebuilding a few tab items is
+    // cheap, but a 20-tab session shouldn't re-allocate NSImages, tracking
+    // areas, and constraints on every keystroke from a background tab.
+    private var items: [UUID: TabItemNSView] = [:]
+    private var trackedTabIDs: Set<UUID> = []
+
     init(coordinator: TabBarView.Coordinator) {
         self.coordinator = coordinator
         super.init(frame: .zero)
@@ -46,13 +54,23 @@ class TabBarNSView: NSView {
         themeObserver = NotificationCenter.default.addObserver(
             forName: ThemeManager.themeDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            self?.layer?.backgroundColor = ThemeManager.shared.tabBarBG.cgColor
-            self?.reloadTabs()
+            guard let self = self else { return }
+            self.layer?.backgroundColor = ThemeManager.shared.tabBarBG.cgColor
+            self.items.values.forEach { $0.refreshAppearance() }
         }
     }
 
     required init?(coder: NSCoder) { fatalError() }
-    deinit { if let o = themeObserver { NotificationCenter.default.removeObserver(o) } }
+    deinit {
+        if let o = themeObserver { NotificationCenter.default.removeObserver(o) }
+        // Detach hasUpdate callbacks from tabs we were tracking so closures
+        // don't outlive the bar.
+        for id in trackedTabIDs {
+            if let tab = coordinator.tabManager.tabs.first(where: { $0.id == id }) {
+                tab.onHasUpdateChange = nil
+            }
+        }
+    }
 
     private func setup() {
         wantsLayer = true
@@ -92,19 +110,64 @@ class TabBarNSView: NSView {
         coordinator.tabManager.addLocalShellTab()
     }
 
-    func reloadTabs() {
-        stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    /// Incrementally sync the displayed tabs to match the manager state. We reuse
+    /// existing TabItemNSView instances keyed by tab.id; only new tabs allocate.
+    func syncTabs() {
         let manager = coordinator.tabManager
+        let currentIDs = Set(manager.tabs.map(\.id))
+
+        // Remove items for closed tabs and detach their hasUpdate callback.
+        for id in Array(items.keys) where !currentIDs.contains(id) {
+            items[id]?.removeFromSuperview()
+            items.removeValue(forKey: id)
+        }
+        for id in trackedTabIDs.subtracting(currentIDs) {
+            // Tab no longer exists in manager. Closure capture is weak so no
+            // leak, but explicit clear keeps things tidy.
+            trackedTabIDs.remove(id)
+        }
+
+        // Build/update the items in the manager's order.
+        var desiredOrder: [TabItemNSView] = []
         for tab in manager.tabs {
-            let item = TabItemNSView(
-                tabID: tab.id, title: tab.title,
-                isSelected: tab.id == manager.selectedTabID,
-                hasUpdate: tab.hasUpdate,
-                managerID: manager.id
-            )
-            item.onSelect = { [weak manager] in manager?.selectTab(tab.id) }
-            item.onClose = { [weak manager] in manager?.removeTab(tab.id) }
-            stackView.addArrangedSubview(item)
+            let isSelected = (tab.id == manager.selectedTabID)
+            let item: TabItemNSView
+            if let existing = items[tab.id] {
+                item = existing
+                item.updateState(title: tab.title, isSelected: isSelected, hasUpdate: tab.hasUpdate)
+            } else {
+                item = TabItemNSView(
+                    tabID: tab.id, title: tab.title,
+                    isSelected: isSelected, hasUpdate: tab.hasUpdate,
+                    managerID: manager.id
+                )
+                item.onSelect = { [weak manager] in manager?.selectTab(tab.id) }
+                item.onClose = { [weak manager] in manager?.removeTab(tab.id) }
+                items[tab.id] = item
+            }
+            // (Re)install the hasUpdate callback so the dot blinks without
+            // having to round-trip through ObservableObject + SwiftUI.
+            if !trackedTabIDs.contains(tab.id) {
+                let tabID = tab.id
+                tab.onHasUpdateChange = { [weak self] value in
+                    self?.items[tabID]?.updateHasUpdate(value)
+                }
+                trackedTabIDs.insert(tab.id)
+            }
+            desiredOrder.append(item)
+        }
+
+        // Reorder stack view only if the visible order actually changed.
+        let currentOrder = stackView.arrangedSubviews
+        let sameOrder = currentOrder.count == desiredOrder.count &&
+            zip(currentOrder, desiredOrder).allSatisfy { $0 === $1 }
+        if !sameOrder {
+            for view in currentOrder {
+                stackView.removeArrangedSubview(view)
+            }
+            for item in desiredOrder {
+                stackView.addArrangedSubview(item)
+            }
         }
     }
 
@@ -161,8 +224,9 @@ class TabBarNSView: NSView {
 class TabItemNSView: NSView {
     let tabID: UUID
     let managerID: UUID
-    private let isSelected: Bool
-    private let hasUpdate: Bool
+    private(set) var isSelected: Bool
+    private(set) var hasUpdate: Bool
+    private(set) var title: String
 
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
@@ -178,6 +242,7 @@ class TabItemNSView: NSView {
 
     init(tabID: UUID, title: String, isSelected: Bool, hasUpdate: Bool, managerID: UUID) {
         self.tabID = tabID
+        self.title = title
         self.isSelected = isSelected
         self.hasUpdate = hasUpdate
         self.managerID = managerID
@@ -240,6 +305,33 @@ class TabItemNSView: NSView {
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
 
+    // MARK: - State Updates
+
+    func updateState(title: String, isSelected: Bool, hasUpdate: Bool) {
+        var changed = false
+        if self.title != title {
+            self.title = title
+            titleLabel.stringValue = title
+        }
+        if self.isSelected != isSelected {
+            self.isSelected = isSelected
+            changed = true
+        }
+        if self.hasUpdate != hasUpdate {
+            self.hasUpdate = hasUpdate
+            changed = true
+        }
+        if changed { updateAppearance() }
+    }
+
+    func updateHasUpdate(_ value: Bool) {
+        guard hasUpdate != value else { return }
+        hasUpdate = value
+        updateAppearance()
+    }
+
+    func refreshAppearance() { updateAppearance() }
+
     private func updateAppearance() {
         let tm = ThemeManager.shared
         stopBlinkAnimation()
@@ -283,6 +375,7 @@ class TabItemNSView: NSView {
 
     private func startBlinkAnimation() {
         guard let layer = self.layer else { return }
+        if layer.animation(forKey: "blink") != nil { return }
         let anim = CABasicAnimation(keyPath: "backgroundColor")
         anim.fromValue = NSColor.clear.cgColor
         anim.toValue = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor

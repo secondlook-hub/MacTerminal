@@ -11,6 +11,14 @@ class PseudoTerminal: ObservableObject {
     // UTF-8 remainder bytes from previous read (accessed only from readQueue)
     private var utf8Remainder = Data()
 
+    // Coalesced output buffer. PTY reads can fire many times back-to-back
+    // (e.g. during `cat largefile` or `npm install`); paying for a main-thread
+    // hop, screen parse, and full needsDisplay per chunk pegs CPU. We batch
+    // pending bytes on the read queue and let the main thread drain them on
+    // the next runloop turn — same data, far fewer wakeups.
+    private var pendingOutput = Data()
+    private var flushScheduled = false
+
     /// Password to auto-send when an SSH password prompt is detected (one-shot).
     /// Set from main thread, consumed from readQueue.
     private var _pendingPassword: String?
@@ -131,8 +139,12 @@ class PseudoTerminal: ObservableObject {
                 }
 
                 if !complete.isEmpty {
-                    DispatchQueue.main.async {
-                        self.onOutput?(complete)
+                    self.pendingOutput.append(complete)
+                    if !self.flushScheduled {
+                        self.flushScheduled = true
+                        DispatchQueue.main.async { [weak self] in
+                            self?.flushPendingOutput()
+                        }
                     }
                 }
             } else if n == 0 || (n < 0 && errno != EINTR) {
@@ -154,6 +166,18 @@ class PseudoTerminal: ObservableObject {
         }
         source.resume()
         self.readSource = source
+    }
+
+    /// Drain the coalesced buffer on the main thread and hand it to the screen.
+    private func flushPendingOutput() {
+        let chunk: Data = readQueue.sync {
+            let d = pendingOutput
+            pendingOutput = Data()
+            flushScheduled = false
+            return d
+        }
+        guard !chunk.isEmpty else { return }
+        onOutput?(chunk)
     }
 
     /// Splits data at the last complete UTF-8 character boundary.
@@ -224,6 +248,8 @@ class PseudoTerminal: ObservableObject {
             utf8Remainder = Data()
             passwordBuffer = ""
             _pendingPassword = nil
+            pendingOutput = Data()
+            flushScheduled = false
         }
 
         let pid = childPID

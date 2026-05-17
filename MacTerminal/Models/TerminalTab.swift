@@ -9,13 +9,19 @@ class TerminalTab: Identifiable, ObservableObject {
     @Published var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
     @Published var focusedPaneID: UUID
     var isActive = false
+
+    // hasUpdate intentionally does NOT broadcast via objectWillChange. Every PTY
+    // chunk on an inactive tab toggles it; routing through ObservableObject made
+    // the whole tab bar (and the visible terminal) re-render on background output.
+    // Tab-bar items subscribe to onHasUpdateChange directly.
     var hasUpdate: Bool = false {
         didSet {
             if hasUpdate != oldValue {
-                objectWillChange.send()
+                onHasUpdateChange?(hasUpdate)
             }
         }
     }
+    var onHasUpdateChange: ((Bool) -> Void)?
     let rootNode: SplitNodeRef
 
     var terminal: PseudoTerminal { focusedPane.terminal }

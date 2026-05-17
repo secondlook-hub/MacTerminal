@@ -307,12 +307,18 @@ struct MacTerminalApp: App {
 
     private static func findAllSubviews<T: NSView>(of type: T.Type, in view: NSView) -> [T] {
         var result: [T] = []
+        // Skip hidden subtrees: terminal containers for inactive tabs live in
+        // the same window (hidden) thanks to the per-tab view cache, and
+        // menu-triggered actions like "Bigger Text" should only hit the
+        // visible terminal.
+        if view.isHidden { return result }
         if let v = view as? T { result.append(v) }
         for sub in view.subviews { result.append(contentsOf: findAllSubviews(of: type, in: sub)) }
         return result
     }
 
     private static func findSubview<T: NSView>(in view: NSView) -> T? {
+        if view.isHidden { return nil }
         if let v = view as? T { return v }
         for sub in view.subviews {
             if let found: T = findSubview(in: sub) { return found }

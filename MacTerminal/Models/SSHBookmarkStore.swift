@@ -5,6 +5,12 @@ class SSHBookmarkStore: ObservableObject {
 
     private let fileURL: URL
 
+    // Persistence runs off the main thread with a short debounce so the UI
+    // (sheet dismiss, drag-drop reorder, rename) returns immediately. Multiple
+    // edits in the same beat collapse into a single write.
+    private let saveQueue = DispatchQueue(label: "com.macterminal.bookmarks.save", qos: .utility)
+    private var pendingSave: DispatchWorkItem?
+
     /// Backward-compatible computed property: collects all bookmarks from the tree.
     var bookmarks: [SSHBookmark] {
         collectBookmarks(from: rootItems)
@@ -16,6 +22,15 @@ class SSHBookmarkStore: ObservableObject {
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         fileURL = appDir.appendingPathComponent("bookmarks.json")
         load()
+    }
+
+    deinit {
+        // Flush any pending write synchronously so quitting mid-edit doesn't
+        // lose the user's last change.
+        if let work = pendingSave {
+            work.cancel()
+            performSave(snapshot: rootItems)
+        }
     }
 
     // MARK: - Persistence
@@ -39,12 +54,22 @@ class SSHBookmarkStore: ObservableObject {
     }
 
     func save() {
+        pendingSave?.cancel()
+        let snapshot = rootItems
+        let work = DispatchWorkItem { [weak self] in
+            self?.performSave(snapshot: snapshot)
+        }
+        pendingSave = work
+        saveQueue.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
+    }
+
+    private func performSave(snapshot: [SidebarItem]) {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
-            let tree = BookmarkTreeFile(version: 2, rootItems: rootItems)
+            let tree = BookmarkTreeFile(version: 2, rootItems: snapshot)
             let data = try encoder.encode(tree)
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
         } catch {
             print("Failed to save bookmarks: \(error)")
         }

@@ -17,12 +17,22 @@ class CommandStore: ObservableObject {
 
     private let fileURL: URL
 
+    private let saveQueue = DispatchQueue(label: "com.macterminal.commands.save", qos: .utility)
+    private var pendingSave: DispatchWorkItem?
+
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("MacTerminal")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         fileURL = appDir.appendingPathComponent("commands.json")
         load()
+    }
+
+    deinit {
+        if let work = pendingSave {
+            work.cancel()
+            performSave(snapshot: commands)
+        }
     }
 
     func load() {
@@ -36,11 +46,21 @@ class CommandStore: ObservableObject {
     }
 
     func save() {
+        pendingSave?.cancel()
+        let snapshot = commands
+        let work = DispatchWorkItem { [weak self] in
+            self?.performSave(snapshot: snapshot)
+        }
+        pendingSave = work
+        saveQueue.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
+    }
+
+    private func performSave(snapshot: [CommandItem]) {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(commands)
-            try data.write(to: fileURL)
+            let data = try encoder.encode(snapshot)
+            try data.write(to: fileURL, options: .atomic)
         } catch {
             print("Failed to save commands: \(error)")
         }

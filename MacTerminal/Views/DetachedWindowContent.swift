@@ -7,12 +7,7 @@ struct DetachedWindowContent: View {
     var body: some View {
         VStack(spacing: 0) {
             TabBarView(tabManager: tabManager)
-            if let tab = tabManager.selectedTab {
-                SplitTerminalView(nodeRef: tab.rootNode, tab: tab)
-                    .id(tab.id)
-            } else {
-                Color(nsColor: .terminalBG)
-            }
+            TerminalDetailHost(tabManager: tabManager)
         }
         .preferredColorScheme(themeManager.colorScheme)
         .focusedSceneValue(\.terminalScreen, tabManager.selectedTab?.screen)
