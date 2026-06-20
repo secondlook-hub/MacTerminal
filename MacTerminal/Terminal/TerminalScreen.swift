@@ -25,6 +25,12 @@ class TerminalScreen {
     var gridWrapped: [Bool] = []
     static let maxScrollback = 5000
 
+    /// Running count of logical lines (non-wrapped rows) currently in `scrollback`.
+    /// Maintained incrementally so the status bar doesn't rescan the whole
+    /// scrollback (up to `maxScrollback` rows) on every single screen refresh —
+    /// the dominant cause of progressive slowdown in long, output-heavy sessions.
+    private(set) var scrollbackLogicalLines = 0
+
     var cursorRow = 0
     var cursorCol = 0
     var savedCursorRow = 0
@@ -57,6 +63,7 @@ class TerminalScreen {
     private var savedMainScrollbackTimestamps: [Date]?
     private var savedMainGridWrapped: [Bool]?
     private var savedMainScrollbackWrapped: [Bool]?
+    private var savedMainScrollbackLogical = 0
     private var savedMainCursorRow = 0
     private var savedMainCursorCol = 0
 
@@ -170,6 +177,27 @@ class TerminalScreen {
 
     static func emptyGrid(rows: Int, cols: Int) -> [[Cell]] {
         Array(repeating: Array(repeating: Cell(), count: cols), count: rows)
+    }
+
+    /// Drop trailing cells that render and copy as nothing (blank space, no
+    /// background, no decorations) before a row is stored in scrollback. The grid
+    /// keeps full `cols`-width rows, but scrollback (up to `maxScrollback` rows) is
+    /// the accumulator — in no-wrap mode each row is `cols` (e.g. 1000) cells wide
+    /// yet usually holds far less, so this makes scrollback memory proportional to
+    /// actual content. All scrollback readers are bounds-checked against `count`.
+    static func trimmedRow(_ row: [Cell]) -> [Cell] {
+        var end = row.count
+        while end > 0 {
+            let c = row[end - 1]
+            if c.char == " " && c.bg == .clear
+                && !c.underline && !c.strikethrough
+                && !c.wide && !c.widePadding {
+                end -= 1
+            } else {
+                break
+            }
+        }
+        return end == row.count ? row : Array(row.prefix(end))
     }
 
     // MARK: - Process Data
@@ -367,13 +395,19 @@ class TerminalScreen {
 
     private func scrollUp() {
         if savedMainGrid == nil {
-            scrollback.append(grid[scrollTop])
+            let wrapped = gridWrapped[scrollTop]
+            scrollback.append(Self.trimmedRow(grid[scrollTop]))
             scrollbackTimestamps.append(gridTimestamps[scrollTop])
-            scrollbackWrapped.append(gridWrapped[scrollTop])
+            scrollbackWrapped.append(wrapped)
+            if !wrapped { scrollbackLogicalLines += 1 }
             if scrollback.count > Self.maxScrollback {
-                scrollback.removeFirst(scrollback.count - Self.maxScrollback)
-                scrollbackTimestamps.removeFirst(scrollbackTimestamps.count - Self.maxScrollback)
-                scrollbackWrapped.removeFirst(scrollbackWrapped.count - Self.maxScrollback)
+                let removeCount = scrollback.count - Self.maxScrollback
+                for k in 0..<removeCount where !scrollbackWrapped[k] {
+                    scrollbackLogicalLines -= 1
+                }
+                scrollback.removeFirst(removeCount)
+                scrollbackTimestamps.removeFirst(removeCount)
+                scrollbackWrapped.removeFirst(removeCount)
             }
         }
         for r in scrollTop..<scrollBottom {
@@ -565,6 +599,8 @@ class TerminalScreen {
         scrollback = []
         scrollbackTimestamps = []
         scrollbackWrapped = []
+        savedMainScrollbackLogical = scrollbackLogicalLines
+        scrollbackLogicalLines = 0
         cursorRow = 0; cursorCol = 0
         scrollTop = 0; scrollBottom = rows - 1
     }
@@ -577,6 +613,7 @@ class TerminalScreen {
         scrollbackTimestamps = savedMainScrollbackTimestamps ?? []
         gridWrapped = savedMainGridWrapped ?? Array(repeating: false, count: rows)
         scrollbackWrapped = savedMainScrollbackWrapped ?? []
+        scrollbackLogicalLines = savedMainScrollbackLogical
         cursorRow = savedMainCursorRow
         cursorCol = savedMainCursorCol
         savedMainGrid = nil; savedMainScrollback = nil
@@ -747,6 +784,14 @@ class TerminalScreen {
         scrollTop = 0; scrollBottom = rows - 1
         cursorRow = min(cursorRow, rows - 1)
         cursorCol = min(cursorCol, cols - 1)
+    }
+
+    /// Clear the scrollback buffer and all of its parallel arrays/counters.
+    func clearScrollback() {
+        scrollback.removeAll()
+        scrollbackTimestamps.removeAll()
+        scrollbackWrapped.removeAll()
+        scrollbackLogicalLines = 0
     }
 
     /// Extract all text content (scrollback + current screen) as a plain string.

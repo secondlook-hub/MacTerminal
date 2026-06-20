@@ -134,6 +134,11 @@ class TerminalContainerView: NSView {
     let terminal: PseudoTerminal
     var lastCols = 0
     var lastRows = 0
+    /// Reported column count in no-wrap mode. Large enough that real-world lines
+    /// (wide tables, long paths) almost never wrap, but far below the old 10000:
+    /// every grid/scrollback row allocates this many Cells, and a fresh blank row
+    /// of this width is allocated on every line scroll.
+    static let noWrapCols = 1000
     private var findBarTop: NSLayoutConstraint!
     private var scrollViewTop: NSLayoutConstraint!
     private(set) var isFindBarVisible = false
@@ -209,12 +214,9 @@ class TerminalContainerView: NSView {
     }
 
     func updateStatusBar(selection: (start: (row: Int, col: Int), end: (row: Int, col: Int))? = nil) {
-        var logicalLine = 0
-        for i in 0..<screen.scrollback.count {
-            if i >= screen.scrollbackWrapped.count || !screen.scrollbackWrapped[i] {
-                logicalLine += 1
-            }
-        }
+        // Scrollback portion is maintained incrementally (see TerminalScreen) so
+        // this stays O(visible rows) instead of O(scrollback) on every refresh.
+        var logicalLine = screen.scrollbackLogicalLines
         for r in 0...screen.cursorRow {
             if r >= screen.gridWrapped.count || !screen.gridWrapped[r] {
                 logicalLine += 1
@@ -376,7 +378,7 @@ class TerminalContainerView: NSView {
             let availableWidth = bounds.width - drawView.paddingLeft - drawView.timestampWidth
             cols = max(Int(availableWidth / drawView.cellWidth), 20)
         } else {
-            cols = 10000
+            cols = Self.noWrapCols
         }
         let rows = max(Int((availableHeight - drawView.paddingBottom) / drawView.cellHeight), 5)
 
@@ -1233,8 +1235,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 UserDefaults.standard.set(!current, forKey: "blockSelectionMode")
                 return true
             case "k":
-                screen?.scrollback.removeAll()
-                screen?.scrollbackTimestamps.removeAll()
+                screen?.clearScrollback()
                 if let sv = superview as? NSClipView, let container = sv.superview?.superview as? TerminalContainerView {
                     container.refreshDisplay()
                 }
@@ -1326,7 +1327,9 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             guard sr >= 0, sr < screen.rows else { return nil }
             cells = screen.grid[sr]
         }
-        let cols = screen.cols
+        // Clamp to the row's actual length: scrollback rows are trimmed of their
+        // trailing blank cells, so they can be shorter than screen.cols.
+        let cols = min(screen.cols, cells.count)
         guard cell.col >= 0, cell.col < cols else { return nil }
 
         // If clicked on a space, no selection
