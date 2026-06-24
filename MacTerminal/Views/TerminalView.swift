@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import QuartzCore
 
 struct TerminalView: NSViewRepresentable {
     @ObservedObject var tab: TerminalTab
@@ -145,6 +146,15 @@ class TerminalContainerView: NSView {
     var textWrap = UserDefaults.standard.object(forKey: "textWrap") == nil ? true : UserDefaults.standard.bool(forKey: "textWrap")
     var onFocused: (() -> Void)?
     private(set) weak var currentPane: TerminalPane?
+
+    // Display refresh throttling. Bursty PTY output (`cat largefile`, `npm install`)
+    // can request a refresh hundreds of times per runloop turn; the heavy work
+    // (frame resize, clip scroll, reflect, status bar) is pointless faster than
+    // the screen actually refreshes. Cap to ~display rate with a guaranteed
+    // trailing refresh so the final frame is always shown.
+    private var refreshThrottleScheduled = false
+    private var lastRefreshAt: CFTimeInterval = 0
+    private static let minRefreshInterval: CFTimeInterval = 1.0 / 120.0
 
     init(terminal: PseudoTerminal, screen: TerminalScreen) {
         self.terminal = terminal
@@ -345,6 +355,31 @@ class TerminalContainerView: NSView {
     }
 
     func refreshDisplay() {
+        // Background (hidden) tabs do no view work at all: AppKit won't draw a
+        // hidden view anyway, and the frame/scroll/status-bar churn just steals
+        // the main thread from the visible tab. The host re-runs refreshDisplay()
+        // when the tab is revealed, and viewDidMoveToWindow does on attach, so
+        // the visible state is always brought current at that point.
+        guard window != nil, !isHiddenOrHasHiddenAncestor else { return }
+
+        let now = CACurrentMediaTime()
+        let elapsed = now - lastRefreshAt
+        if elapsed < Self.minRefreshInterval {
+            // Too soon — schedule a single trailing refresh and coalesce the rest.
+            guard !refreshThrottleScheduled else { return }
+            refreshThrottleScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + (Self.minRefreshInterval - elapsed)) { [weak self] in
+                guard let self = self else { return }
+                self.refreshThrottleScheduled = false
+                self.refreshDisplay()
+            }
+            return
+        }
+        lastRefreshAt = now
+        performRefresh()
+    }
+
+    private func performRefresh() {
         let totalLines = screen.scrollback.count + screen.rows
         let contentHeight = CGFloat(totalLines) * drawView.cellHeight + drawView.paddingBottom
         let height = max(contentHeight, scrollView.contentSize.height)

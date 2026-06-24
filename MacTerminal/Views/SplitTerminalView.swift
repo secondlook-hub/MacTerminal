@@ -118,10 +118,20 @@ final class TerminalDetailHostView: NSView {
         }
 
         // Reveal the selected tab, hide the rest.
+        let didReveal = (lastVisibleEntry !== entry)
         for (id, e) in coordinator.tabEntries {
             e.view.isHidden = (id != tab.id)
         }
         lastVisibleEntry = entry
+
+        // The revealed tab skipped refreshes while hidden, so its draw view's
+        // frame / scroll position is stale — bring it current exactly once on
+        // the switch (avoid forcing a scroll-to-bottom on every host update).
+        if didReveal {
+            for pane in tab.rootNode.node.allPanes() {
+                coordinator.paneCache[pane.id]?.refreshDisplay()
+            }
+        }
 
         applyFocusBorder(tab: tab)
         makeFocusedFirstResponder(tab: tab)

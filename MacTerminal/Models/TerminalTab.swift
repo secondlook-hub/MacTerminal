@@ -53,11 +53,13 @@ class TerminalTab: Identifiable, ObservableObject {
         pane.screen.onCommandEntered = { [weak self] cmd in
             DispatchQueue.main.async { self?.title = cmd }
         }
+        // onChange is always invoked on the main thread (screen.process runs in
+        // PseudoTerminal.flushPendingOutput / onProcessExit, both on main), so set
+        // hasUpdate directly — an extra main.async hop per chunk just piles up
+        // queued blocks for busy background tabs.
         pane.screen.onChange = { [weak self] in
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self, !self.isActive else { return }
-                self.hasUpdate = true
-            }
+            guard let self = self, !self.isActive else { return }
+            self.hasUpdate = true
         }
     }
 
