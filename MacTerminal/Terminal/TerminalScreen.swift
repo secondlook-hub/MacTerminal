@@ -31,6 +31,27 @@ class TerminalScreen {
     /// the dominant cause of progressive slowdown in long, output-heavy sessions.
     private(set) var scrollbackLogicalLines = 0
 
+    /// Per-row prefix sum of logical (non-wrapped) lines, counting from session
+    /// start (evicted rows included). `scrollbackLogicalAbs[i]` is the cumulative
+    /// non-wrapped count up to and including `scrollback[i]`. Together with
+    /// `evictedLogicalAbs` this answers "how many logical lines precede scrollback
+    /// row N" in O(1), so the draw loop no longer rescans the whole scrollback
+    /// (up to `maxScrollback` rows) every frame when line numbers / timestamps are
+    /// shown — the dominant per-frame cost in long sessions with those gutters on.
+    private var scrollbackLogicalAbs: [Int] = []
+    /// Cumulative non-wrapped count of rows already evicted from the front of
+    /// `scrollback`. Subtracted from `scrollbackLogicalAbs` to get counts relative
+    /// to the current (post-eviction) scrollback.
+    private var evictedLogicalAbs = 0
+
+    /// Number of logical (non-wrapped) lines in `scrollback[0..<idx]`, in O(1).
+    func logicalLineCount(beforeScrollbackIndex idx: Int) -> Int {
+        guard idx > 0 else { return 0 }
+        let i = min(idx, scrollbackLogicalAbs.count) - 1
+        guard i >= 0 else { return 0 }
+        return scrollbackLogicalAbs[i] - evictedLogicalAbs
+    }
+
     var cursorRow = 0
     var cursorCol = 0
     var savedCursorRow = 0
@@ -64,6 +85,8 @@ class TerminalScreen {
     private var savedMainGridWrapped: [Bool]?
     private var savedMainScrollbackWrapped: [Bool]?
     private var savedMainScrollbackLogical = 0
+    private var savedMainScrollbackLogicalAbs: [Int]?
+    private var savedMainEvictedLogicalAbs = 0
     private var savedMainCursorRow = 0
     private var savedMainCursorCol = 0
 
@@ -394,20 +417,32 @@ class TerminalScreen {
     }
 
     private func scrollUp() {
+        // Reuse the row leaving the top of the screen as the fresh blank row at
+        // the bottom instead of allocating a new `cols`-wide Cell array on every
+        // single line feed. In no-wrap mode each row is `noWrapCols` cells wide,
+        // so at heavy output rates this allocation/free churn is the largest
+        // source of heap fragmentation — the slow, restart-curable degradation
+        // seen over multi-day sessions.
+        var recycled = grid[scrollTop]
+
         if savedMainGrid == nil {
             let wrapped = gridWrapped[scrollTop]
             scrollback.append(Self.trimmedRow(grid[scrollTop]))
             scrollbackTimestamps.append(gridTimestamps[scrollTop])
             scrollbackWrapped.append(wrapped)
             if !wrapped { scrollbackLogicalLines += 1 }
+            let prevAbs = scrollbackLogicalAbs.last ?? evictedLogicalAbs
+            scrollbackLogicalAbs.append(prevAbs + (wrapped ? 0 : 1))
             if scrollback.count > Self.maxScrollback {
                 let removeCount = scrollback.count - Self.maxScrollback
                 for k in 0..<removeCount where !scrollbackWrapped[k] {
                     scrollbackLogicalLines -= 1
                 }
+                evictedLogicalAbs = scrollbackLogicalAbs[removeCount - 1]
                 scrollback.removeFirst(removeCount)
                 scrollbackTimestamps.removeFirst(removeCount)
                 scrollbackWrapped.removeFirst(removeCount)
+                scrollbackLogicalAbs.removeFirst(removeCount)
             }
         }
         for r in scrollTop..<scrollBottom {
@@ -415,7 +450,16 @@ class TerminalScreen {
             gridTimestamps[r] = gridTimestamps[r + 1]
             gridWrapped[r] = gridWrapped[r + 1]
         }
-        grid[scrollBottom] = Array(repeating: Cell(), count: cols)
+        // `recycled` is now uniquely referenced (the shift overwrote grid[scrollTop]
+        // and scrollback holds a trimmed copy, not this buffer), so clearing in
+        // place reuses its storage instead of reallocating. Guard the width in
+        // case the buffer was ever shorter than `cols`.
+        if recycled.count == cols {
+            for i in 0..<cols { recycled[i] = Cell() }
+            grid[scrollBottom] = recycled
+        } else {
+            grid[scrollBottom] = Array(repeating: Cell(), count: cols)
+        }
         gridTimestamps[scrollBottom] = Date()
         gridWrapped[scrollBottom] = false
     }
@@ -601,6 +645,10 @@ class TerminalScreen {
         scrollbackWrapped = []
         savedMainScrollbackLogical = scrollbackLogicalLines
         scrollbackLogicalLines = 0
+        savedMainScrollbackLogicalAbs = scrollbackLogicalAbs
+        savedMainEvictedLogicalAbs = evictedLogicalAbs
+        scrollbackLogicalAbs = []
+        evictedLogicalAbs = 0
         cursorRow = 0; cursorCol = 0
         scrollTop = 0; scrollBottom = rows - 1
     }
@@ -614,6 +662,9 @@ class TerminalScreen {
         gridWrapped = savedMainGridWrapped ?? Array(repeating: false, count: rows)
         scrollbackWrapped = savedMainScrollbackWrapped ?? []
         scrollbackLogicalLines = savedMainScrollbackLogical
+        scrollbackLogicalAbs = savedMainScrollbackLogicalAbs ?? []
+        evictedLogicalAbs = savedMainEvictedLogicalAbs
+        savedMainScrollbackLogicalAbs = nil
         cursorRow = savedMainCursorRow
         cursorCol = savedMainCursorCol
         savedMainGrid = nil; savedMainScrollback = nil
@@ -792,6 +843,8 @@ class TerminalScreen {
         scrollbackTimestamps.removeAll()
         scrollbackWrapped.removeAll()
         scrollbackLogicalLines = 0
+        scrollbackLogicalAbs.removeAll()
+        evictedLogicalAbs = 0
     }
 
     /// Extract all text content (scrollback + current screen) as a plain string.

@@ -8,7 +8,14 @@ class TerminalTab: Identifiable, ObservableObject {
     @Published var isRecording = false
     @Published var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
     @Published var focusedPaneID: UUID
-    var isActive = false
+    var isActive = false {
+        didSet {
+            guard isActive != oldValue else { return }
+            // Visible tab → low-latency output; hidden tab → batched output so it
+            // can't saturate the main thread and lag the foreground.
+            for pane in rootNode.node.allPanes() { pane.setForeground(isActive) }
+        }
+    }
 
     // hasUpdate intentionally does NOT broadcast via objectWillChange. Every PTY
     // chunk on an inactive tab toggles it; routing through ObservableObject made
@@ -61,6 +68,8 @@ class TerminalTab: Identifiable, ObservableObject {
             guard let self = self, !self.isActive else { return }
             self.hasUpdate = true
         }
+        // New panes inherit the tab's current visibility.
+        pane.setForeground(isActive)
     }
 
     func splitPane(axis: SplitAxis) {

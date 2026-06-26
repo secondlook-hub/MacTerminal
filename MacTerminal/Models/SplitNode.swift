@@ -8,6 +8,14 @@ class TerminalPane: Identifiable, ObservableObject {
     /// Called on main thread after screen content updates; set by the view layer for display refresh.
     var onScreenUpdate: (() -> Void)?
 
+    /// Drive the terminal's flush cadence from the owning tab's visibility. A
+    /// hidden pane batches output so a busy background session doesn't starve the
+    /// foreground; revealing it flushes immediately so it shows current content.
+    func setForeground(_ fg: Bool) {
+        terminal.backgroundMode = !fg
+        if fg { terminal.flushNow() }
+    }
+
     init() {
         self.terminal = PseudoTerminal()
         self.screen = TerminalScreen()

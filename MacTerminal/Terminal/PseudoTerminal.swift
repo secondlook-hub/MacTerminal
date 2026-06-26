@@ -19,6 +19,20 @@ class PseudoTerminal: ObservableObject {
     private var pendingOutput = Data()
     private var flushScheduled = false
 
+    /// When true this terminal belongs to a hidden/background tab. Its output is
+    /// still parsed on the main thread (the screen is read there too, so moving
+    /// the parse off-main would race), but flushes are coalesced over a longer
+    /// window instead of draining on the very next runloop turn. A background
+    /// SSH session spewing logs then wakes the main thread ~10×/s in larger
+    /// batches rather than on every read, leaving the foreground tab responsive.
+    /// Accessed only from `readQueue`; set from the main thread via `backgroundMode`.
+    private var _backgroundMode = false
+    var backgroundMode: Bool {
+        get { readQueue.sync { _backgroundMode } }
+        set { readQueue.sync { _backgroundMode = newValue } }
+    }
+    private static let backgroundFlushInterval: CFTimeInterval = 0.1
+
     /// Password to auto-send when an SSH password prompt is detected (one-shot).
     /// Set from main thread, consumed from readQueue.
     private var _pendingPassword: String?
@@ -142,7 +156,8 @@ class PseudoTerminal: ObservableObject {
                     self.pendingOutput.append(complete)
                     if !self.flushScheduled {
                         self.flushScheduled = true
-                        DispatchQueue.main.async { [weak self] in
+                        let delay = self._backgroundMode ? Self.backgroundFlushInterval : 0
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                             self?.flushPendingOutput()
                         }
                     }
@@ -178,6 +193,17 @@ class PseudoTerminal: ObservableObject {
         }
         guard !chunk.isEmpty else { return }
         onOutput?(chunk)
+    }
+
+    /// Force an immediate drain of any buffered output on the main thread. Used
+    /// when a background tab is revealed so it reflects the latest output without
+    /// waiting out the background flush interval.
+    func flushNow() {
+        if Thread.isMainThread {
+            flushPendingOutput()
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.flushPendingOutput() }
+        }
     }
 
     /// Splits data at the last complete UTF-8 character boundary.

@@ -482,6 +482,23 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             return f
         }
     }
+    // Gutter (line number / timestamp) rendering cache. Both gutters share one
+    // font (2pt smaller than the body font) and the status-bar text color. The
+    // draw loop used to recreate this font *and* an attributes dictionary for
+    // every gutter line on every frame; with timestamps or line numbers on and a
+    // full scrollback, that is allocation churn proportional to visible-lines ×
+    // frame-rate — a steady contributor to long-session heap pressure. Cache it
+    // and refresh only on font / theme changes.
+    private var gutterFont: NSFont!
+    private var gutterAttrs: [NSAttributedString.Key: Any] = [:]
+    private func rebuildGutterCache() {
+        gutterFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
+        gutterAttrs = [
+            .font: gutterFont!,
+            .foregroundColor: ThemeManager.shared.statusBarText,
+        ]
+    }
+
     var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
     private(set) var timestampWidth: CGFloat = 0
     private lazy var timestampFormatter: DateFormatter = {
@@ -577,6 +594,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
            let scrollView = sv.superview as? NSScrollView {
             scrollView.backgroundColor = bgColor
         }
+        rebuildGutterCache()
         needsDisplay = true
     }
 
@@ -589,6 +607,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             timestampWidth = 0
         }
         paddingLeft = Self.basePaddingLeft + lineNumberWidth
+        rebuildGutterCache()
     }
 
     func setTimestampVisible(_ visible: Bool) {
@@ -859,11 +878,18 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             }
         }
 
-        // Pre-compute logical line number at firstLine
+        // Pre-compute logical line number at firstLine. The scrollback portion is
+        // answered in O(1) by the screen's maintained prefix counter; only the
+        // (≤ rows) grid portion is scanned, so this no longer costs O(scrollback)
+        // every frame when line numbers / timestamps are shown.
         var logicalLine = 0
         if showLineNumber || showTimestamp {
-            for i in 0..<firstLine {
-                if !isWrapped(i) { logicalLine += 1 }
+            let sbPortion = min(firstLine, sbCount)
+            logicalLine = screen.logicalLineCount(beforeScrollbackIndex: sbPortion)
+            if firstLine > sbCount {
+                for i in sbCount..<firstLine {
+                    if !isWrapped(i) { logicalLine += 1 }
+                }
             }
         }
 
@@ -976,16 +1002,10 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             // Draw line number on the left side (last line of group, non-empty only)
             if showLineNumber && isLastOfGroup && hasContent {
                 let lnStr = "\(logicalLine)" as NSString
-                let lnFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
-                let lnColor = ThemeManager.shared.statusBarText
-                let lnAttrs: [NSAttributedString.Key: Any] = [
-                    .font: lnFont,
-                    .foregroundColor: lnColor,
-                ]
-                let lnSize = lnStr.size(withAttributes: lnAttrs)
+                let lnSize = lnStr.size(withAttributes: gutterAttrs)
                 let lnX = Self.basePaddingLeft + lineNumberWidth - lnSize.width - 4
-                let lnY = y + (cellHeight - lnFont.pointSize) / 2 - 1
-                lnStr.draw(at: NSPoint(x: lnX, y: lnY), withAttributes: lnAttrs)
+                let lnY = y + (cellHeight - gutterFont.pointSize) / 2 - 1
+                lnStr.draw(at: NSPoint(x: lnX, y: lnY), withAttributes: gutterAttrs)
             }
 
             // Draw timestamp on the right side (last line of group, non-empty only)
@@ -1000,15 +1020,9 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                         ? screen.gridTimestamps[sr] : Date()
                 }
                 let tsStr = timestampFormatter.string(from: ts) as NSString
-                let tsFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
-                let tsColor = ThemeManager.shared.statusBarText
-                let tsAttrs: [NSAttributedString.Key: Any] = [
-                    .font: tsFont,
-                    .foregroundColor: tsColor,
-                ]
                 let tsX = bounds.width - timestampWidth
-                let tsY = y + (cellHeight - tsFont.pointSize) / 2 - 1
-                tsStr.draw(at: NSPoint(x: tsX, y: tsY), withAttributes: tsAttrs)
+                let tsY = y + (cellHeight - gutterFont.pointSize) / 2 - 1
+                tsStr.draw(at: NSPoint(x: tsX, y: tsY), withAttributes: gutterAttrs)
             }
         }
 
