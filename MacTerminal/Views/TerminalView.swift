@@ -1108,16 +1108,6 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let a = (s0.row < s1.row || (s0.row == s1.row && s0.col <= s1.col)) ? s0 : s1
         let b = (s0.row < s1.row || (s0.row == s1.row && s0.col <= s1.col)) ? s1 : s0
 
-        // True if the line at `idx` is a soft-wrapped continuation of the previous line.
-        let isWrapped: (Int) -> Bool = { idx in
-            if idx < screen.scrollback.count {
-                return idx < screen.scrollbackWrapped.count && screen.scrollbackWrapped[idx]
-            } else {
-                let sr = idx - screen.scrollback.count
-                return sr < screen.gridWrapped.count && screen.gridWrapped[sr]
-            }
-        }
-
         var text = ""
         for line in a.row...b.row {
             let cells: [TerminalScreen.Cell]
@@ -1153,7 +1143,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             // any trailing spaces (they may be real content split by the wrap).
             let nextIsWrapContinuation = selectionMode == .line
                 && line < b.row
-                && isWrapped(line + 1)
+                && screen.isContinuationLine(line + 1)
 
             if !nextIsWrapContinuation {
                 while lineText.hasSuffix(" ") { lineText.removeLast() }

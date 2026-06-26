@@ -23,6 +23,17 @@ class TerminalScreen {
     var gridTimestamps: [Date] = []
     var scrollbackWrapped: [Bool] = []
     var gridWrapped: [Bool] = []
+    /// Parallel to grid/scrollback: `true` means the row ended with an explicit
+    /// line break (LF / IND), so the row below it starts a NEW logical line.
+    /// `gridWrapped` only catches *autowrapped* continuations; some programs draw
+    /// a full-width row and move the cursor down explicitly (no autowrap), which
+    /// leaves no wrap flag. For copy, a row that is full AND not hard-broken is
+    /// treated as continued — so a visually-wrapped line copies as one line even
+    /// when it wasn't produced by autowrap. A full row that *was* hard-broken
+    /// (e.g. output exactly the terminal width followed by a newline) stays a
+    /// separate line.
+    var scrollbackLineHardBreak: [Bool] = []
+    var gridLineHardBreak: [Bool] = []
     static let maxScrollback = 5000
 
     /// Running count of logical lines (non-wrapped rows) currently in `scrollback`.
@@ -84,6 +95,8 @@ class TerminalScreen {
     private var savedMainScrollbackTimestamps: [Date]?
     private var savedMainGridWrapped: [Bool]?
     private var savedMainScrollbackWrapped: [Bool]?
+    private var savedMainGridLineHardBreak: [Bool]?
+    private var savedMainScrollbackLineHardBreak: [Bool]?
     private var savedMainScrollbackLogical = 0
     private var savedMainScrollbackLogicalAbs: [Int]?
     private var savedMainEvictedLogicalAbs = 0
@@ -196,6 +209,7 @@ class TerminalScreen {
         self.grid = Self.emptyGrid(rows: rows, cols: cols)
         self.gridTimestamps = Array(repeating: Date(), count: rows)
         self.gridWrapped = Array(repeating: false, count: rows)
+        self.gridLineHardBreak = Array(repeating: false, count: rows)
     }
 
     static func emptyGrid(rows: Int, cols: Int) -> [[Cell]] {
@@ -253,6 +267,10 @@ class TerminalScreen {
         case 0x09: cursorCol = min((cursorCol / 8 + 1) * 8, cols - 1)
         case 0x0A, 0x0B, 0x0C:
             recordFlushLine()
+            // Explicit line break: the row we're leaving ends a logical line.
+            if cursorRow >= 0 && cursorRow < gridLineHardBreak.count {
+                gridLineHardBreak[cursorRow] = true
+            }
             lineFeed()
         case 0x0D:
             recordingPendingCR = true
@@ -272,7 +290,12 @@ class TerminalScreen {
         case "(", ")", "*", "+": parserState = .charset
         case "7":  savedCursorRow = cursorRow; savedCursorCol = cursorCol; parserState = .normal
         case "8":  cursorRow = savedCursorRow; cursorCol = savedCursorCol; parserState = .normal
-        case "D":  lineFeed(); parserState = .normal
+        case "D":
+            // IND (index) — line feed; the row left ends a logical line.
+            if cursorRow >= 0 && cursorRow < gridLineHardBreak.count {
+                gridLineHardBreak[cursorRow] = true
+            }
+            lineFeed(); parserState = .normal
         case "M":  reverseLineFeed(); parserState = .normal
         case "c":  reset(); parserState = .normal
         case "P", "_", "^", "X":
@@ -342,6 +365,9 @@ class TerminalScreen {
         }
         guard cursorRow >= 0, cursorRow < rows, cursorCol >= 0, cursorCol < cols else { return }
         gridTimestamps[cursorRow] = Date()
+        // Writing into this row (re)builds it; its line-end status is decided
+        // when the cursor later leaves it via a line break (or not).
+        if cursorRow < gridLineHardBreak.count { gridLineHardBreak[cursorRow] = false }
 
         // If overwriting a wide char's padding cell, clear the first cell too
         if grid[cursorRow][cursorCol].widePadding && cursorCol > 0 {
@@ -430,6 +456,7 @@ class TerminalScreen {
             scrollback.append(Self.trimmedRow(grid[scrollTop]))
             scrollbackTimestamps.append(gridTimestamps[scrollTop])
             scrollbackWrapped.append(wrapped)
+            scrollbackLineHardBreak.append(gridLineHardBreak[scrollTop])
             if !wrapped { scrollbackLogicalLines += 1 }
             let prevAbs = scrollbackLogicalAbs.last ?? evictedLogicalAbs
             scrollbackLogicalAbs.append(prevAbs + (wrapped ? 0 : 1))
@@ -442,6 +469,7 @@ class TerminalScreen {
                 scrollback.removeFirst(removeCount)
                 scrollbackTimestamps.removeFirst(removeCount)
                 scrollbackWrapped.removeFirst(removeCount)
+                scrollbackLineHardBreak.removeFirst(removeCount)
                 scrollbackLogicalAbs.removeFirst(removeCount)
             }
         }
@@ -449,6 +477,7 @@ class TerminalScreen {
             grid[r] = grid[r + 1]
             gridTimestamps[r] = gridTimestamps[r + 1]
             gridWrapped[r] = gridWrapped[r + 1]
+            gridLineHardBreak[r] = gridLineHardBreak[r + 1]
         }
         // `recycled` is now uniquely referenced (the shift overwrote grid[scrollTop]
         // and scrollback holds a trimmed copy, not this buffer), so clearing in
@@ -462,6 +491,7 @@ class TerminalScreen {
         }
         gridTimestamps[scrollBottom] = Date()
         gridWrapped[scrollBottom] = false
+        gridLineHardBreak[scrollBottom] = false
     }
 
     private func scrollDown() {
@@ -469,10 +499,12 @@ class TerminalScreen {
             grid[r] = grid[r - 1]
             gridTimestamps[r] = gridTimestamps[r - 1]
             gridWrapped[r] = gridWrapped[r - 1]
+            gridLineHardBreak[r] = gridLineHardBreak[r - 1]
         }
         grid[scrollTop] = Array(repeating: Cell(), count: cols)
         gridTimestamps[scrollTop] = Date()
         gridWrapped[scrollTop] = false
+        gridLineHardBreak[scrollTop] = false
     }
 
     private func scrollUpN(_ n: Int) {
@@ -635,14 +667,18 @@ class TerminalScreen {
         savedMainScrollbackTimestamps = scrollbackTimestamps
         savedMainGridWrapped = gridWrapped
         savedMainScrollbackWrapped = scrollbackWrapped
+        savedMainGridLineHardBreak = gridLineHardBreak
+        savedMainScrollbackLineHardBreak = scrollbackLineHardBreak
         savedMainCursorRow = cursorRow
         savedMainCursorCol = cursorCol
         grid = Self.emptyGrid(rows: rows, cols: cols)
         gridTimestamps = Array(repeating: Date(), count: rows)
         gridWrapped = Array(repeating: false, count: rows)
+        gridLineHardBreak = Array(repeating: false, count: rows)
         scrollback = []
         scrollbackTimestamps = []
         scrollbackWrapped = []
+        scrollbackLineHardBreak = []
         savedMainScrollbackLogical = scrollbackLogicalLines
         scrollbackLogicalLines = 0
         savedMainScrollbackLogicalAbs = scrollbackLogicalAbs
@@ -661,6 +697,8 @@ class TerminalScreen {
         scrollbackTimestamps = savedMainScrollbackTimestamps ?? []
         gridWrapped = savedMainGridWrapped ?? Array(repeating: false, count: rows)
         scrollbackWrapped = savedMainScrollbackWrapped ?? []
+        gridLineHardBreak = savedMainGridLineHardBreak ?? Array(repeating: false, count: rows)
+        scrollbackLineHardBreak = savedMainScrollbackLineHardBreak ?? []
         scrollbackLogicalLines = savedMainScrollbackLogical
         scrollbackLogicalAbs = savedMainScrollbackLogicalAbs ?? []
         evictedLogicalAbs = savedMainEvictedLogicalAbs
@@ -670,6 +708,7 @@ class TerminalScreen {
         savedMainGrid = nil; savedMainScrollback = nil
         savedMainGridTimestamps = nil; savedMainScrollbackTimestamps = nil
         savedMainGridWrapped = nil; savedMainScrollbackWrapped = nil
+        savedMainGridLineHardBreak = nil; savedMainScrollbackLineHardBreak = nil
         scrollTop = 0; scrollBottom = rows - 1
     }
 
@@ -689,6 +728,7 @@ class TerminalScreen {
             // Erase display only; preserve scrollback buffer
             for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
             gridWrapped = Array(repeating: false, count: rows)
+            gridLineHardBreak = Array(repeating: false, count: rows)
         default: break
         }
     }
@@ -706,8 +746,10 @@ class TerminalScreen {
         for _ in 0..<min(n, scrollBottom - cursorRow + 1) {
             grid.remove(at: min(scrollBottom, grid.count - 1))
             gridWrapped.remove(at: min(scrollBottom, gridWrapped.count - 1))
+            gridLineHardBreak.remove(at: min(scrollBottom, gridLineHardBreak.count - 1))
             grid.insert(Array(repeating: Cell(), count: cols), at: cursorRow)
             gridWrapped.insert(false, at: cursorRow)
+            gridLineHardBreak.insert(false, at: cursorRow)
         }
     }
 
@@ -715,8 +757,10 @@ class TerminalScreen {
         for _ in 0..<min(n, scrollBottom - cursorRow + 1) {
             grid.remove(at: cursorRow)
             gridWrapped.remove(at: cursorRow)
+            gridLineHardBreak.remove(at: cursorRow)
             grid.insert(Array(repeating: Cell(), count: cols), at: min(scrollBottom, grid.count - 1))
             gridWrapped.insert(false, at: min(scrollBottom, gridWrapped.count - 1))
+            gridLineHardBreak.insert(false, at: min(scrollBottom, gridLineHardBreak.count - 1))
         }
     }
 
@@ -816,6 +860,7 @@ class TerminalScreen {
         for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
         gridTimestamps = Array(repeating: now, count: rows)
         gridWrapped = Array(repeating: false, count: rows)
+        gridLineHardBreak = Array(repeating: false, count: rows)
     }
 
     func resize(newRows: Int, newCols: Int) {
@@ -826,11 +871,14 @@ class TerminalScreen {
         }
         var newTimestamps = Array(repeating: Date(), count: newRows)
         var newWrapped = Array(repeating: false, count: newRows)
+        var newHardBreak = Array(repeating: false, count: newRows)
         for r in 0..<min(rows, newRows) {
             newTimestamps[r] = gridTimestamps[r]
             newWrapped[r] = gridWrapped[r]
+            newHardBreak[r] = gridLineHardBreak[r]
         }
         grid = newGrid; gridTimestamps = newTimestamps; gridWrapped = newWrapped
+        gridLineHardBreak = newHardBreak
         rows = newRows; cols = newCols
         scrollTop = 0; scrollBottom = rows - 1
         cursorRow = min(cursorRow, rows - 1)
@@ -842,9 +890,53 @@ class TerminalScreen {
         scrollback.removeAll()
         scrollbackTimestamps.removeAll()
         scrollbackWrapped.removeAll()
+        scrollbackLineHardBreak.removeAll()
         scrollbackLogicalLines = 0
         scrollbackLogicalAbs.removeAll()
         evictedLogicalAbs = 0
+    }
+
+    // MARK: - Logical-line continuation (for wrap-aware copy)
+
+    /// Cells of a physical line by combined index (scrollback rows first, then grid).
+    private func physicalRow(at idx: Int) -> [Cell]? {
+        if idx < scrollback.count { return scrollback[idx] }
+        let sr = idx - scrollback.count
+        guard sr >= 0, sr < rows, sr < grid.count else { return nil }
+        return grid[sr]
+    }
+
+    private func isPhysicalWrapped(_ idx: Int) -> Bool {
+        if idx < scrollback.count {
+            return idx >= 0 && idx < scrollbackWrapped.count && scrollbackWrapped[idx]
+        }
+        let sr = idx - scrollback.count
+        return sr >= 0 && sr < gridWrapped.count && gridWrapped[sr]
+    }
+
+    private func isPhysicalHardBroken(_ idx: Int) -> Bool {
+        if idx < scrollback.count {
+            return idx >= 0 && idx < scrollbackLineHardBreak.count && scrollbackLineHardBreak[idx]
+        }
+        let sr = idx - scrollback.count
+        return sr >= 0 && sr < gridLineHardBreak.count && gridLineHardBreak[sr]
+    }
+
+    /// True if the physical row filled its full width (last column occupied).
+    private func isPhysicalRowFull(_ idx: Int) -> Bool {
+        guard cols > 0, let cells = physicalRow(at: idx), cells.count >= cols else { return false }
+        let last = cells[cols - 1]
+        return last.char != " " || last.bg != .clear || last.widePadding || last.wide
+    }
+
+    /// True if physical line `idx` continues the logical line of `idx - 1` — i.e.
+    /// the displayed line break between them is a soft wrap, not a real newline.
+    /// Catches both autowrapped continuations (`wrapped` flag) and full-width rows
+    /// drawn via explicit cursor moves that weren't terminated by a line break.
+    func isContinuationLine(_ idx: Int) -> Bool {
+        guard idx > 0 else { return false }
+        if isPhysicalWrapped(idx) { return true }
+        return isPhysicalRowFull(idx - 1) && !isPhysicalHardBroken(idx - 1)
     }
 
     /// Extract all text content (scrollback + current screen) as a plain string.

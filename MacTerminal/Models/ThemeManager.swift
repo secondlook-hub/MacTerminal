@@ -44,6 +44,7 @@ final class ThemeManager: ObservableObject {
     private var _terminalBG: NSColor = .black
     private var _terminalFG: NSColor = .white
     private var _tabBarBG: NSColor = .black
+    private var _tabSelectedBG: NSColor = .black
     private var _tabItemHoverBG: NSColor = .clear
     private var _tabIconColor: NSColor = .white
     private var _tabTitleColor: NSColor = .white
@@ -62,6 +63,9 @@ final class ThemeManager: ObservableObject {
             _terminalBG  = NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
             _terminalFG  = NSColor(red: 0.9,  green: 0.9,  blue: 0.9,  alpha: 1.0)
             _tabBarBG    = NSColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1)
+            // Clearly elevated above the bar so the active tab is unmistakable
+            // (terminalBG is only ~3% lighter than the bar and reads as identical).
+            _tabSelectedBG = NSColor(red: 0.22, green: 0.23, blue: 0.27, alpha: 1)
             _tabItemHoverBG = NSColor.white.withAlphaComponent(0.06)
             _tabIconColor   = .white
             _tabTitleColor  = .white
@@ -77,6 +81,7 @@ final class ThemeManager: ObservableObject {
             _terminalBG  = NSColor(white: 0.30, alpha: 1.0)
             _terminalFG  = NSColor(white: 0.95, alpha: 1.0)
             _tabBarBG    = NSColor(white: 0.25, alpha: 1)
+            _tabSelectedBG = NSColor(white: 0.45, alpha: 1)
             _tabItemHoverBG = NSColor.white.withAlphaComponent(0.08)
             _tabIconColor   = .white
             _tabTitleColor  = .white
@@ -92,6 +97,7 @@ final class ThemeManager: ObservableObject {
             _terminalBG  = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
             _terminalFG  = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1.0)
             _tabBarBG    = NSColor(red: 0.93, green: 0.93, blue: 0.94, alpha: 1)
+            _tabSelectedBG = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
             _tabItemHoverBG = NSColor.black.withAlphaComponent(0.06)
             _tabIconColor   = .black
             _tabTitleColor  = .black
@@ -118,6 +124,7 @@ final class ThemeManager: ObservableObject {
     // MARK: - Tab Bar Colors
 
     var tabBarBG: NSColor { _tabBarBG }
+    var tabSelectedBG: NSColor { _tabSelectedBG }
     var tabItemHoverBG: NSColor { _tabItemHoverBG }
     var tabIconColor: NSColor { _tabIconColor }
     var tabTitleColor: NSColor { _tabTitleColor }

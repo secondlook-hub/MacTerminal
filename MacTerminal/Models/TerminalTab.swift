@@ -57,9 +57,10 @@ class TerminalTab: Identifiable, ObservableObject {
         pane.screen.onTitleChange = { [weak self] newTitle in
             DispatchQueue.main.async { self?.windowTitle = newTitle }
         }
-        pane.screen.onCommandEntered = { [weak self] cmd in
-            DispatchQueue.main.async { self?.title = cmd }
-        }
+        // Intentionally NOT mirroring entered commands into the tab title: a
+        // running command can expose sensitive arguments (tokens, paths, hosts).
+        // The tab keeps its connection identity — the SSH bookmark/server name
+        // (or "Shell" for a local session) set at creation.
         // onChange is always invoked on the main thread (screen.process runs in
         // PseudoTerminal.flushPendingOutput / onProcessExit, both on main), so set
         // hasUpdate directly — an extra main.async hop per chunk just piles up

@@ -299,7 +299,7 @@ class TabItemNSView: NSView {
             accentBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             accentBar.trailingAnchor.constraint(equalTo: trailingAnchor),
             accentBar.bottomAnchor.constraint(equalTo: bottomAnchor),
-            accentBar.heightAnchor.constraint(equalToConstant: 2),
+            accentBar.heightAnchor.constraint(equalToConstant: 3),
         ])
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -337,7 +337,7 @@ class TabItemNSView: NSView {
         stopBlinkAnimation()
 
         if isSelected {
-            layer?.backgroundColor = NSColor.terminalBG.cgColor
+            layer?.backgroundColor = tm.tabSelectedBG.cgColor
         } else if isHovering {
             layer?.backgroundColor = tm.tabItemHoverBG.cgColor
         } else if hasUpdate {
@@ -359,6 +359,8 @@ class TabItemNSView: NSView {
             titleAlpha = 0.5
         }
 
+        // Weight contrast reinforces the active tab beyond color alone.
+        titleLabel.font = .systemFont(ofSize: 12, weight: isSelected ? .semibold : .regular)
         iconView.contentTintColor = tm.tabIconColor.withAlphaComponent(iconAlpha)
         titleLabel.textColor = tm.tabTitleColor.withAlphaComponent(titleAlpha)
         closeBtn.contentTintColor = tm.tabCloseColor
