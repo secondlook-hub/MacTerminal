@@ -35,6 +35,14 @@ class TerminalScreen {
     var scrollbackLineHardBreak: [Bool] = []
     var gridLineHardBreak: [Bool] = []
     static let maxScrollback = 5000
+    /// Once scrollback is full, every new line would otherwise `removeFirst(1)` on
+    /// all parallel arrays — each an O(maxScrollback) element shift, paid on every
+    /// single line of output. That is the slowdown that only shows up after long
+    /// use (when scrollback has filled). Instead we let it grow by this slack and
+    /// then drop a whole batch at once, so the O(n) shift is amortized to ~O(1)
+    /// per line (one trim per `trimChunk` lines). Retained history stays between
+    /// `maxScrollback` and `maxScrollback + trimChunk` rows.
+    static let trimChunk = 1024
 
     /// Running count of logical lines (non-wrapped rows) currently in `scrollback`.
     /// Maintained incrementally so the status bar doesn't rescan the whole
@@ -460,7 +468,8 @@ class TerminalScreen {
             if !wrapped { scrollbackLogicalLines += 1 }
             let prevAbs = scrollbackLogicalAbs.last ?? evictedLogicalAbs
             scrollbackLogicalAbs.append(prevAbs + (wrapped ? 0 : 1))
-            if scrollback.count > Self.maxScrollback {
+            if scrollback.count > Self.maxScrollback + Self.trimChunk {
+                // Drop everything above the retention target in one batch.
                 let removeCount = scrollback.count - Self.maxScrollback
                 for k in 0..<removeCount where !scrollbackWrapped[k] {
                     scrollbackLogicalLines -= 1

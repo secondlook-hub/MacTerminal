@@ -392,13 +392,20 @@ class TerminalContainerView: NSView {
         }
 
         drawView.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        drawView.needsDisplay = true
 
         // Auto-scroll to bottom
         let clipView = scrollView.contentView
         let maxY = max(0, height - clipView.bounds.height)
         clipView.scroll(to: NSPoint(x: 0, y: maxY))
         scrollView.reflectScrolledClipView(clipView)
+
+        // Invalidate only the viewport, not the whole document. The document view
+        // is as tall as the entire scrollback (thousands of rows); marking it all
+        // dirty makes a layer-backed view re-render a backing store proportional to
+        // scrollback length on every refresh — the slowdown that appears once the
+        // scrollback has filled. Only the visible rows are ever shown, so redraw
+        // cost stays O(viewport) regardless of how long the scrollback gets.
+        drawView.setNeedsDisplay(drawView.visibleRect)
 
         updateStatusBar()
     }
@@ -520,6 +527,11 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     private var selectionMode: SelectionMode = .line
     private var selStart: (row: Int, col: Int)?
     private var selEnd: (row: Int, col: Int)?
+    /// Cell of the previous mouseDown, used to gate double-click word selection:
+    /// macOS reports clickCount==2 purely on timing, so two quick clicks made to
+    /// *reposition* (different spots) would select a word. We only treat it as a
+    /// word double-click when the second click lands on essentially the same cell.
+    private var lastClickCell: (row: Int, col: Int)?
 
     // Search
     var searchMatches: [(line: Int, col: Int, length: Int)] = []
@@ -1152,6 +1164,12 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             if line < b.row && !nextIsWrapContinuation { text += "\n" }
         }
 
+        // Copy without surrounding whitespace: a drag selection often starts
+        // before the text and ends past it, capturing leading/trailing spaces and
+        // blank lines. Interior indentation (between the first and last content)
+        // is preserved.
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
@@ -1332,8 +1350,16 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         window?.makeFirstResponder(self)
         onFocused?()
 
-        if event.clickCount == 2 {
-            let cell = pointToCell(convert(event.locationInWindow, from: nil))
+        let cell = pointToCell(convert(event.locationInWindow, from: nil))
+        // Only treat clickCount==2 as a word double-click when the second click is
+        // on (essentially) the same cell as the first. Otherwise two quick clicks
+        // meant to reposition would select a word purely because of timing.
+        let sameSpotAsLastClick = lastClickCell.map {
+            $0.row == cell.row && abs($0.col - cell.col) <= 1
+        } ?? false
+        lastClickCell = cell
+
+        if event.clickCount == 2 && sameSpotAsLastClick {
             if let range = findWordRange(at: cell) {
                 selectionMode = .line
                 selStart = (row: cell.row, col: range.start)
@@ -1349,7 +1375,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         } else {
             selectionMode = UserDefaults.standard.bool(forKey: "blockSelectionMode") ? .block : .line
         }
-        selStart = pointToCell(convert(event.locationInWindow, from: nil))
+        selStart = cell
         selEnd = nil
         onSelectionChange?(nil)
         needsDisplay = true
@@ -1371,46 +1397,25 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         let cols = min(screen.cols, cells.count)
         guard cell.col >= 0, cell.col < cols else { return nil }
 
-        // If clicked on a space, no selection
-        if cells[cell.col].char == " " { return nil }
+        // Word selection matching macOS Terminal / iTerm: a double-click selects a
+        // contiguous run of "word" characters — letters and digits (incl. CJK and
+        // other Unicode), plus the path/identifier punctuation `_-./+~\` so that
+        // filenames, paths, flags, and dotted names select as a single unit. The
+        // second half of a wide character (widePadding) is part of its word.
+        let wordPunct: Set<Character> = ["_", "-", ".", "/", "+", "~", "\\"]
+        let isWord: (Int) -> Bool = { i in
+            let c = cells[i]
+            if c.widePadding { return true }
+            return c.char.isLetter || c.char.isNumber || wordPunct.contains(c.char)
+        }
 
-        // Scan left: find boundary (2+ consecutive spaces or line start)
+        // Clicking on whitespace / punctuation outside a word selects nothing.
+        guard isWord(cell.col) else { return nil }
+
         var start = cell.col
-        while start > 0 {
-            if start >= 2 && cells[start - 1].char == " " && cells[start - 2].char == " " {
-                break
-            }
-            if start >= 1 && cells[start - 1].char == " " {
-                // Check if this single space is part of 2+ spaces
-                if start >= 2 && cells[start - 2].char == " " {
-                    break
-                }
-                // Single space — include it in selection, keep scanning
-                start -= 1
-            } else {
-                start -= 1
-            }
-        }
-
-        // Scan right: find boundary (2+ consecutive spaces or line end)
+        while start > 0 && isWord(start - 1) { start -= 1 }
         var end = cell.col
-        while end < cols - 1 {
-            if end + 2 < cols && cells[end + 1].char == " " && cells[end + 2].char == " " {
-                break
-            }
-            if end + 1 < cols && cells[end + 1].char == " " {
-                if end + 2 < cols && cells[end + 2].char == " " {
-                    break
-                }
-                end += 1
-            } else {
-                end += 1
-            }
-        }
-
-        // Trim leading/trailing single spaces from selection
-        while start < end && cells[start].char == " " { start += 1 }
-        while end > start && cells[end].char == " " { end -= 1 }
+        while end < cols - 1 && isWord(end + 1) { end += 1 }
 
         return (start: start, end: end)
     }

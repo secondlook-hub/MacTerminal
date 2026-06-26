@@ -64,6 +64,9 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **Secure Tab Titles** — Tabs never display the running command (which can expose tokens, paths, or hosts). A tab shows its connection identity instead — the SSH bookmark/server name, or "Shell" for a local session — fixed at creation
 - **Clearer Active Tab** — The selected tab is unmistakable: a distinctly elevated background (the old highlight was nearly identical to the bar), a thicker accent underline, and a semibold title
 - **Robust Wrap-Aware Copy** — Line-mode copy joins a soft-wrapped logical line into a single line even when the wrap wasn't produced by autowrap (e.g. a full-width row drawn via explicit cursor moves), while genuinely separate lines — including full-width rows ended by a real newline — stay on their own lines. Block selection still copies exactly what's on screen
+- **Terminal-Style Word Selection** — Double-click selects a single word the way macOS Terminal / iTerm do: a contiguous run of word characters — letters and digits (incl. CJK) plus path/identifier punctuation (`_ - . / + ~ \`) — so filenames, paths, flags, and dotted names select as one unit. A word double-click only triggers when the two clicks land on the same spot, so quick repositioning clicks no longer select a word by accident
+- **Trimmed Copy** — Copied text has no leading or trailing whitespace or blank lines (a drag selection often grabs surrounding spaces); interior indentation is preserved
+- **Scales with Long Scrollback** — Once the scrollback fills, output no longer slows down: row eviction is amortized to ~O(1) per line instead of shifting every parallel buffer on each line, and refreshes invalidate only the visible viewport instead of the full (thousands-of-rows-tall) document, so redraw cost stays constant no matter how long the scrollback gets
 
 ## Screenshots
 
