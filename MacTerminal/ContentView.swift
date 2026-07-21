@@ -123,8 +123,9 @@ struct ContentView: View {
         }
         .alert("Update Available", isPresented: $updateChecker.updateAvailable) {
             if let downloadURL = updateChecker.downloadURL {
-                Button("Download") {
-                    NSWorkspace.shared.open(downloadURL)
+                Button("Install & Restart") {
+                    UpdateInstaller.shared.install(from: downloadURL,
+                                                   version: updateChecker.latestVersion)
                 }
             }
             if let releaseURL = updateChecker.releaseURL {
@@ -134,7 +135,7 @@ struct ContentView: View {
             }
             Button("Later", role: .cancel) {}
         } message: {
-            Text("MacTerminal \(updateChecker.latestVersion) is available.\n(Current: \(updateChecker.currentVersion))")
+            Text("MacTerminal \(updateChecker.latestVersion) is available.\n(Current: \(updateChecker.currentVersion))\n\nInstall & Restart downloads, installs, and relaunches automatically.")
         }
         .alert("No Updates Available", isPresented: $updateChecker.upToDate) {
             Button("OK", role: .cancel) {}
