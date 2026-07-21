@@ -70,6 +70,7 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 - **No Crash on Exiting a Full-Screen Program** — Quitting vim/less/top (or an SSH session that restores the main screen) no longer kills the app when the pane had been resized meanwhile — which happens routinely just by closing another tab and letting the layout reflow. The saved main-screen buffer is now resized along with the visible one, and the screen buffer self-heals if its geometry is ever out of step, so writes can't run past the end of a stale grid
 - **Wrapped Lines Ending in a Space Copy as One Line** — A drag selection over a soft-wrapped line no longer breaks into two lines when the wrap point lands right after a space. Whether a row spans the full terminal width is now recorded as it's written, instead of being guessed from the cells afterwards — a guess that could never work, since a written space is indistinguishable from an untouched cell and trailing blanks are stripped before a row enters the scrollback. Lines separated by a real newline still copy as separate lines
 - **One-Click Auto Update** — When a new release is found, "Install & Restart" does everything: downloads the DMG, mounts it, replaces the installed app bundle, clears the download quarantine flag, and relaunches into the new version. No more download → mount → drag-to-Applications. Failures fall back to a warning with a link to the download page
+- **Permissions Survive Updates** — Builds are signed with a stable certificate instead of an ad-hoc signature, so macOS keeps privacy grants (Full Disk Access, Accessibility, folder access) attached to the app. Grant them once after the first install; every later update — including the in-app one-click update — reuses the same signature and never asks again
 
 ## Screenshots
 
@@ -79,15 +80,25 @@ A native macOS terminal emulator built with SwiftUI + AppKit.
 
 Download `MacTerminal.dmg` from [Releases](https://github.com/secondlook-hub/MacTerminal/releases), or grab it directly from the repository.
 
+### Permissions (one time only)
+
+Builds are code-signed with a stable certificate, so macOS keeps every privacy
+grant tied to the app. Grant **System Settings → Privacy & Security → Full Disk
+Access → MacTerminal** once after the first install; later updates — including
+the in-app one-click update — reuse the same signature and never ask again.
+
 ## Build from Source
 
 ```bash
 git clone https://github.com/secondlook-hub/MacTerminal.git
 cd MacTerminal
-xcodebuild -scheme MacTerminal -configuration Release build
+scripts/make-signing-cert.sh   # once per machine: stable "MacTerminal Dev" identity
+scripts/build.sh               # signed .app + DMG with an /Applications symlink
 ```
 
-Requires **Xcode 15+** and **macOS 13.0 Ventura** or later.
+Requires **Xcode 15+** and **macOS 13.0 Ventura** or later. Without the
+certificate the build falls back to ad-hoc signing, and macOS then treats every
+update as a new app, resetting Full Disk Access each time.
 
 ## Keyboard Shortcuts
 
