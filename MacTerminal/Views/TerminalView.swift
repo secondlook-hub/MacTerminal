@@ -1272,15 +1272,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 if selStart != nil, selEnd != nil { copySelection(); return true }
                 return false
             case "v":
-                if let s = NSPasteboard.general.string(forType: .string)?.precomposedStringWithCanonicalMapping {
-                    if screen?.bracketedPasteMode == true {
-                        terminal?.write("\u{1b}[200~")
-                        terminal?.write(s)
-                        terminal?.write("\u{1b}[201~")
-                    } else {
-                        terminal?.write(s)
-                    }
-                }
+                performPaste()
                 return true
             case "f":
                 if let sv = superview as? NSClipView, let container = sv.superview?.superview as? TerminalContainerView {
@@ -1304,6 +1296,105 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         return super.performKeyEquivalent(with: event)
     }
 
+    // MARK: - Paste
+
+    /// Pastes the clipboard into the terminal.
+    ///
+    /// Text is written as-is. Non-text clipboards are turned into *paths*: file
+    /// URLs paste their path, and a raw image (screenshot, copied image from a
+    /// browser) is written to a PNG under the cache directory and its path is
+    /// pasted instead. CLI tools that accept image files — Claude Code among
+    /// them — can then read the image straight from the pasted path.
+    func performPaste() {
+        let pb = NSPasteboard.general
+
+        if let s = pb.string(forType: .string)?.precomposedStringWithCanonicalMapping {
+            writePaste(s)
+            return
+        }
+
+        if let urls = pb.readObjects(forClasses: [NSURL.self],
+                                     options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty {
+            writePaste(urls.map { quotedPath($0.path) }.joined(separator: " ") + " ")
+            return
+        }
+
+        if let path = Self.savePasteboardImage(from: pb) {
+            writePaste(quotedPath(path) + " ")
+        }
+    }
+
+    private func writePaste(_ text: String) {
+        if screen?.bracketedPasteMode == true {
+            terminal?.write("\u{1b}[200~")
+            terminal?.write(text)
+            terminal?.write("\u{1b}[201~")
+        } else {
+            terminal?.write(text)
+        }
+    }
+
+    private func quotedPath(_ path: String) -> String {
+        let p = path.precomposedStringWithCanonicalMapping
+        return p.contains(" ") ? "\"\(p)\"" : p
+    }
+
+    /// True when the clipboard holds something this view knows how to paste.
+    static func pasteboardHasContent(_ pb: NSPasteboard = .general) -> Bool {
+        if pb.string(forType: .string) != nil { return true }
+        return pb.canReadObject(forClasses: [NSURL.self, NSImage.self],
+                                options: [.urlReadingFileURLsOnly: true])
+    }
+
+    /// Writes the clipboard image to a PNG and returns its path, or nil when the
+    /// clipboard holds no image.
+    private static func savePasteboardImage(from pb: NSPasteboard) -> String? {
+        guard let image = NSImage(pasteboard: pb) else { return nil }
+
+        // Re-render through a bitmap rep so vector/PDF clipboards (e.g. copied
+        // from Preview or Keynote) also come out as a plain PNG.
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return nil }
+
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MacTerminal/PastedImages", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        purgeOldPastedImages(in: dir)
+
+        let stamp = pastedImageDateFormatter.string(from: Date())
+        let url = dir.appendingPathComponent("pasted-\(stamp).png")
+        do {
+            try png.write(to: url)
+        } catch {
+            NSSound.beep()
+            return nil
+        }
+        return url.path
+    }
+
+    private static let pastedImageDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return f
+    }()
+
+    /// Pasted images are scratch files; drop anything older than a week so the
+    /// cache directory does not grow without bound.
+    private static func purgeOldPastedImages(in dir: URL) {
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+            if let modified, modified < cutoff {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
+
     // MARK: - Edit Menu Actions
 
     @objc func copy(_ sender: Any?) {
@@ -1311,15 +1402,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     }
 
     @objc func paste(_ sender: Any?) {
-        if let s = NSPasteboard.general.string(forType: .string)?.precomposedStringWithCanonicalMapping {
-            if screen?.bracketedPasteMode == true {
-                terminal?.write("\u{1b}[200~")
-                terminal?.write(s)
-                terminal?.write("\u{1b}[201~")
-            } else {
-                terminal?.write(s)
-            }
-        }
+        performPaste()
     }
 
     override func selectAll(_ sender: Any?) {
@@ -1336,7 +1419,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         case #selector(copy(_:)):
             return selStart != nil && selEnd != nil
         case #selector(paste(_:)):
-            return NSPasteboard.general.string(forType: .string) != nil
+            return Self.pasteboardHasContent()
         case #selector(selectAll(_:)):
             return true
         default:
@@ -1446,15 +1529,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             needsDisplay = true
         } else {
             // No selection → paste
-            if let s = NSPasteboard.general.string(forType: .string)?.precomposedStringWithCanonicalMapping {
-                if screen?.bracketedPasteMode == true {
-                    terminal?.write("\u{1b}[200~")
-                    terminal?.write(s)
-                    terminal?.write("\u{1b}[201~")
-                } else {
-                    terminal?.write(s)
-                }
-            }
+            performPaste()
         }
     }
 }
