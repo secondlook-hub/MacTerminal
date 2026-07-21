@@ -463,10 +463,10 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     var paddingLeft: CGFloat = 4
     var paddingBottom: CGFloat  // one line height, set after cellHeight
     var defaultFont: NSFont {
-        didSet { italicFont = nil; boldItalicFont = nil }
+        didSet { italicFont = nil; boldItalicFont = nil; resetTextCaches() }
     }
     var boldFont: NSFont {
-        didSet { boldItalicFont = nil }
+        didSet { boldItalicFont = nil; resetTextCaches() }
     }
     // Lazy variants: NSFontManager.convert is surprisingly hot when scrollback
     // is full of styled output (CI logs, syntax-highlighted source). Cache them.
@@ -489,21 +489,193 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
             return f
         }
     }
+    private static func styleIndex(bold: Bool, italic: Bool) -> UInt8 {
+        (bold ? 1 : 0) | (italic ? 2 : 0)
+    }
+
+    private func styledFont(style: UInt8) -> NSFont {
+        styledFont(bold: style & 1 != 0, italic: style & 2 != 0)
+    }
+
+    // MARK: - Glyph cache
+    //
+    // The draw loop used to call NSString.draw(at:withAttributes:) once per
+    // character. That spins up the whole TextKit string-drawing engine —
+    // typesetter, line-metric measurement, attribute-dictionary bridging — to
+    // put a single glyph on screen. Blank cells are skipped, so a fresh session
+    // is cheap and the cost only shows up once enough text is on screen: the
+    // "it gets slower the longer I use it" symptom. Sampling a long-running
+    // session put 92% of main-thread work in draw(_:), nearly all of it inside
+    // __NSStringDrawingEngine. Core Text with cached glyph ids draws a whole run
+    // of same-styled cells in one call instead, and the per-character work drops
+    // to a dictionary lookup.
+
+    private struct TextKey: Hashable {
+        let style: UInt8
+        let ch: Character
+    }
+    /// Glyph id per character and style. `0` means the styled font has no glyph
+    /// for it (CJK, emoji, some box-drawing) — those go through `fallbackLine`
+    /// so Core Text can run its own font fallback.
+    private var glyphCache: [TextKey: CGGlyph] = [:]
+    private var fallbackLineCache: [TextKey: CTLine] = [:]
+    /// Distance from the top of a cell down to the text baseline, per style.
+    /// Taken from the same layout manager NSStringDrawing uses, so glyphs land
+    /// exactly where they did before.
+    private var baselineCache: [UInt8: CGFloat] = [:]
+    private var gutterTextCache: [String: (line: CTLine, width: CGFloat)] = [:]
+    private static let baselineLayoutManager = NSLayoutManager()
+    /// Distinct characters in a session are bounded in practice, but a stream of
+    /// CJK or emoji could grow these without limit. Drop everything at a
+    /// generous ceiling rather than track ages — a refill is a few microseconds.
+    private static let textCacheLimit = 8192
+
+    private func resetTextCaches() {
+        glyphCache.removeAll(keepingCapacity: true)
+        fallbackLineCache.removeAll(keepingCapacity: true)
+        baselineCache.removeAll(keepingCapacity: true)
+        gutterTextCache.removeAll(keepingCapacity: true)
+    }
+
+    private func baseline(forStyle style: UInt8) -> CGFloat {
+        if let b = baselineCache[style] { return b }
+        let b = Self.baselineLayoutManager.defaultBaselineOffset(for: styledFont(style: style))
+        baselineCache[style] = b
+        return b
+    }
+
+    /// Glyph id for `ch`, or 0 when the styled font cannot render it.
+    private func glyph(for ch: Character, style: UInt8) -> CGGlyph {
+        let key = TextKey(style: style, ch: ch)
+        if let g = glyphCache[key] { return g }
+        var glyph: CGGlyph = 0
+        // Only single-UTF16-unit characters take the fast path: the Core Text
+        // call maps code units, not grapheme clusters, so surrogate pairs and
+        // combining sequences would come out wrong.
+        let scalars = ch.unicodeScalars
+        if scalars.count == 1, let scalar = scalars.first, scalar.value <= 0xFFFF {
+            var unit = UniChar(scalar.value)
+            var out: CGGlyph = 0
+            if CTFontGetGlyphsForCharacters(styledFont(style: style) as CTFont, &unit, &out, 1) {
+                glyph = out
+            }
+        }
+        if glyphCache.count >= Self.textCacheLimit { glyphCache.removeAll(keepingCapacity: true) }
+        glyphCache[key] = glyph
+        return glyph
+    }
+
+    /// Cached single-character line for what the styled font can't draw itself.
+    /// Deliberately carries no foreground colour: CTLineDraw then paints with
+    /// the context fill colour, so one cached line serves every colour the cell
+    /// may take.
+    private func fallbackLine(for ch: Character, style: UInt8) -> CTLine {
+        let key = TextKey(style: style, ch: ch)
+        if let l = fallbackLineCache[key] { return l }
+        let attr = NSAttributedString(string: String(ch),
+                                      attributes: [.font: styledFont(style: style)])
+        let line = CTLineCreateWithAttributedString(attr)
+        if fallbackLineCache.count >= Self.textCacheLimit {
+            fallbackLineCache.removeAll(keepingCapacity: true)
+        }
+        fallbackLineCache[key] = line
+        return line
+    }
+
+    /// Cached gutter line (line number / timestamp) plus its measured width.
+    /// These repeat heavily — a timestamp changes once a second, line numbers
+    /// scroll through a small window — so measuring and typesetting them per
+    /// frame was pure waste.
+    private func gutterText(_ s: String) -> (line: CTLine, width: CGFloat) {
+        if let c = gutterTextCache[s] { return c }
+        let attr = NSAttributedString(string: s, attributes: [.font: gutterFont!])
+        let line = CTLineCreateWithAttributedString(attr)
+        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        if gutterTextCache.count >= Self.textCacheLimit {
+            gutterTextCache.removeAll(keepingCapacity: true)
+        }
+        let entry = (line: line, width: width)
+        gutterTextCache[s] = entry
+        return entry
+    }
+
+    // MARK: - Glyph run batching
+    //
+    // Consecutive cells sharing a font and colour are collected and drawn in one
+    // CTFontDrawGlyphs call. The run is flushed at the end of each row, which
+    // also means every glyph in a row lands *after* every background fill in
+    // that row — a glyph that overhangs its cell (italics) is no longer clipped
+    // by the next cell's background.
+
+    private var runGlyphs: [CGGlyph] = []
+    private var runPositions: [CGPoint] = []
+    private var runFont: NSFont?
+    private var runColor: NSColor?
+    private var runBaselineY: CGFloat = 0
+    /// Cells the styled font can't draw, held back to the end of the row for the
+    /// same ordering reason.
+    private var runFallbacks: [(line: CTLine, x: CGFloat, baselineY: CGFloat, color: NSColor)] = []
+
+    private func appendGlyph(_ g: CGGlyph, x: CGFloat, font: NSFont, color: NSColor,
+                             baselineY: CGFloat, in ctx: CGContext) {
+        if runFont !== font || runBaselineY != baselineY
+            || !(runColor === color || runColor == color) {
+            flushRowText(in: ctx)
+            runFont = font
+            runColor = color
+            runBaselineY = baselineY
+        }
+        runGlyphs.append(g)
+        // Positions are relative to the run's baseline; flushRowText translates
+        // the context there before drawing.
+        runPositions.append(CGPoint(x: x, y: 0))
+    }
+
+    private func flushRowText(in ctx: CGContext) {
+        if !runGlyphs.isEmpty, let font = runFont, let color = runColor {
+            ctx.saveGState()
+            ctx.textMatrix = .identity
+            // The view is flipped; flipping back here draws the glyphs upright
+            // and puts the run's baseline at y = 0.
+            ctx.translateBy(x: 0, y: runBaselineY)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.setFillColor(color.cgColor)
+            CTFontDrawGlyphs(font as CTFont, runGlyphs, runPositions, runGlyphs.count, ctx)
+            ctx.restoreGState()
+        }
+        runGlyphs.removeAll(keepingCapacity: true)
+        runPositions.removeAll(keepingCapacity: true)
+        runFont = nil
+        runColor = nil
+
+        for f in runFallbacks {
+            drawLine(f.line, x: f.x, baselineY: f.baselineY, color: f.color, in: ctx)
+        }
+        runFallbacks.removeAll(keepingCapacity: true)
+    }
+
+    private func drawLine(_ line: CTLine, x: CGFloat, baselineY: CGFloat,
+                          color: NSColor, in ctx: CGContext) {
+        ctx.saveGState()
+        ctx.textMatrix = .identity
+        ctx.translateBy(x: x, y: baselineY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.setFillColor(color.cgColor)
+        ctx.textPosition = .zero
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
+    }
+
     // Gutter (line number / timestamp) rendering cache. Both gutters share one
-    // font (2pt smaller than the body font) and the status-bar text color. The
-    // draw loop used to recreate this font *and* an attributes dictionary for
-    // every gutter line on every frame; with timestamps or line numbers on and a
-    // full scrollback, that is allocation churn proportional to visible-lines ×
-    // frame-rate — a steady contributor to long-session heap pressure. Cache it
-    // and refresh only on font / theme changes.
+    // font (2pt smaller than the body font) and the status-bar text color, and
+    // their typeset lines are cached by string in `gutterTextCache`. Refresh
+    // only on font / theme changes.
     private var gutterFont: NSFont!
-    private var gutterAttrs: [NSAttributedString.Key: Any] = [:]
+    private var gutterBaseline: CGFloat = 0
     private func rebuildGutterCache() {
         gutterFont = NSFont.monospacedSystemFont(ofSize: defaultFont.pointSize - 2, weight: .regular)
-        gutterAttrs = [
-            .font: gutterFont!,
-            .foregroundColor: ThemeManager.shared.statusBarText,
-        ]
+        gutterBaseline = Self.baselineLayoutManager.defaultBaselineOffset(for: gutterFont)
+        gutterTextCache.removeAll(keepingCapacity: true)
     }
 
     var showTimestamp = UserDefaults.standard.bool(forKey: "showTimestamp")
@@ -869,7 +1041,8 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let screen = screen else { return }
+        guard let screen = screen,
+              let ctx = NSGraphicsContext.current?.cgContext else { return }
 
         bgColor.setFill()
         dirtyRect.fill()
@@ -982,27 +1155,33 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     fg = fg.withAlphaComponent(0.5)
                 }
 
-                let font = styledFont(bold: cell.bold, italic: cell.italic)
-                let glyph = String(ch) as NSString
+                let style = Self.styleIndex(bold: cell.bold, italic: cell.italic)
                 if cell.underline || cell.strikethrough {
+                    // Decorations are rare and need the text engine to position
+                    // the rule, so they keep the old per-cell path.
                     var attrs: [NSAttributedString.Key: Any] = [
-                        .font: font,
+                        .font: styledFont(style: style),
                         .foregroundColor: fg,
                     ]
                     if cell.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
                     if cell.strikethrough { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-                    glyph.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+                    (String(ch) as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
                 } else {
-                    // Hot path: NSString.draw avoids the per-glyph
-                    // NSAttributedString allocation.
-                    glyph.draw(at: NSPoint(x: x, y: y), withAttributes: [
-                        .font: font,
-                        .foregroundColor: fg,
-                    ])
+                    let baselineY = y + baseline(forStyle: style)
+                    let g = glyph(for: ch, style: style)
+                    if g != 0 {
+                        appendGlyph(g, x: x, font: styledFont(style: style), color: fg,
+                                    baselineY: baselineY, in: ctx)
+                    } else {
+                        runFallbacks.append((line: fallbackLine(for: ch, style: style),
+                                             x: x, baselineY: baselineY, color: fg))
+                    }
                 }
 
                 col += cell.wide ? 2 : 1
             }
+
+            flushRowText(in: ctx)
 
             // Check if this is the last physical line of a logical line group
             let isLastOfGroup = (lineIdx + 1 >= totalLines) || !isWrapped(lineIdx + 1)
@@ -1013,11 +1192,12 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
             // Draw line number on the left side (last line of group, non-empty only)
             if showLineNumber && isLastOfGroup && hasContent {
-                let lnStr = "\(logicalLine)" as NSString
-                let lnSize = lnStr.size(withAttributes: gutterAttrs)
-                let lnX = Self.basePaddingLeft + lineNumberWidth - lnSize.width - 4
+                let ln = gutterText("\(logicalLine)")
+                let lnX = Self.basePaddingLeft + lineNumberWidth - ln.width - 4
                 let lnY = y + (cellHeight - gutterFont.pointSize) / 2 - 1
-                lnStr.draw(at: NSPoint(x: lnX, y: lnY), withAttributes: gutterAttrs)
+                drawLine(ln.line, x: lnX,
+                         baselineY: lnY + gutterBaseline,
+                         color: ThemeManager.shared.statusBarText, in: ctx)
             }
 
             // Draw timestamp on the right side (last line of group, non-empty only)
@@ -1031,10 +1211,11 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     ts = sr < screen.gridTimestamps.count
                         ? screen.gridTimestamps[sr] : Date()
                 }
-                let tsStr = timestampFormatter.string(from: ts) as NSString
                 let tsX = bounds.width - timestampWidth
                 let tsY = y + (cellHeight - gutterFont.pointSize) / 2 - 1
-                tsStr.draw(at: NSPoint(x: tsX, y: tsY), withAttributes: gutterAttrs)
+                drawLine(gutterText(timestampFormatter.string(from: ts)).line, x: tsX,
+                         baselineY: tsY + gutterBaseline,
+                         color: ThemeManager.shared.statusBarText, in: ctx)
             }
         }
 
@@ -1358,10 +1539,8 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else { return nil }
 
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MacTerminal/PastedImages", isDirectory: true)
+        let dir = pastedImagesDirectory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        purgeOldPastedImages(in: dir)
 
         let stamp = pastedImageDateFormatter.string(from: Date())
         let url = dir.appendingPathComponent("pasted-\(stamp).png")
@@ -1374,26 +1553,24 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         return url.path
     }
 
+    /// Scratch directory holding the PNGs written by image pastes.
+    static var pastedImagesDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MacTerminal/PastedImages", isDirectory: true)
+    }
+
+    /// Drops the whole pasted-image directory. A pasted path only means anything
+    /// to the commands typed while the app is running, so this runs both at quit
+    /// and at launch — the launch call clears what a crash left behind.
+    static func removeAllPastedImages() {
+        try? FileManager.default.removeItem(at: pastedImagesDirectory)
+    }
+
     private static let pastedImageDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return f
     }()
-
-    /// Pasted images are scratch files; drop anything older than a week so the
-    /// cache directory does not grow without bound.
-    private static func purgeOldPastedImages(in dir: URL) {
-        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-        for file in files {
-            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate
-            if let modified, modified < cutoff {
-                try? FileManager.default.removeItem(at: file)
-            }
-        }
-    }
 
     // MARK: - Edit Menu Actions
 

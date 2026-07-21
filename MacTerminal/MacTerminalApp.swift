@@ -1,7 +1,22 @@
 import SwiftUI
 
+/// Handles the bits of the app lifecycle SwiftUI does not expose.
+class AppDelegate: NSObject, NSApplicationDelegate {
+    // Images pasted as file paths are scratch files that only mean anything
+    // while the app runs. Clearing them at launch as well as at quit means a
+    // crash cannot leave them behind.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        TerminalDrawView.removeAllPastedImages()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        TerminalDrawView.removeAllPastedImages()
+    }
+}
+
 @main
 struct MacTerminalApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var bookmarkStore = SSHBookmarkStore()
     @StateObject private var commandStore = CommandStore()
     @StateObject private var updateChecker = UpdateChecker()
