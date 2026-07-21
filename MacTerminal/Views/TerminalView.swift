@@ -531,6 +531,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     private static let textCacheLimit = 8192
 
     private func resetTextCaches() {
+        lastCursorRender = nil
         glyphCache.removeAll(keepingCapacity: true)
         fallbackLineCache.removeAll(keepingCapacity: true)
         baselineCache.removeAll(keepingCapacity: true)
@@ -709,9 +710,32 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     var searchMatches: [(line: Int, col: Int, length: Int)] = []
     var currentMatchIndex: Int = -1
 
-    // Cursor blink
-    private var cursorOn = true
-    private var blinkTimer: Timer?
+    // MARK: - Cursor
+    //
+    // The cursor lives in its own CALayer rather than being painted by draw(_:),
+    // and blinks with a Core Animation keyframe animation. This is not a
+    // micro-optimisation: a repeating 500ms timer that invalidated the cursor
+    // cell kept the app permanently redrawing, and any redraw makes the
+    // compositor allocate this window's render buffers. Measured on an idle,
+    // empty terminal: 338 MB resident with the timer, 71 MB without, and 76 MB
+    // when the same redraw happened only every 5 s (long enough that the buffers
+    // could go purgeable in between). Handing the blink to the render server
+    // means an idle terminal issues no drawing at all — the layer's contents are
+    // regenerated only when the cell under the cursor actually changes.
+    private let cursorLayer = CALayer()
+    /// What `cursorLayer.contents` was last rendered from. Regenerating the
+    /// image on every refresh would put the per-frame cost straight back.
+    private struct CursorRender: Equatable {
+        let ch: Character
+        let style: UInt8
+        let width: CGFloat
+        let height: CGFloat
+        let scale: CGFloat
+        let fill: NSColor
+        let text: NSColor
+    }
+    private var lastCursorRender: CursorRender?
+    private var keyWindowObservers: [NSObjectProtocol] = []
     private var themeObserver: NSObjectProtocol?
 
     // IME composition
@@ -760,7 +784,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     convenience init() { self.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
     deinit {
-        blinkTimer?.invalidate()
+        keyWindowObservers.forEach { NotificationCenter.default.removeObserver($0) }
         if let o = themeObserver { NotificationCenter.default.removeObserver(o) }
     }
 
@@ -1008,34 +1032,111 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil {
-            // View is being detached — stop the timer so it doesn't keep firing
-            // (and holding allocations) for invisible/torn-down panes.
-            blinkTimer?.invalidate()
-            blinkTimer = nil
-        } else if blinkTimer == nil {
-            blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                // Skip work when the window isn't key — the cursor is rendered
-                // hollow and the screen isn't visible, so toggling state just burns CPU.
-                guard self.window?.isKeyWindow == true else { return }
-                self.cursorOn.toggle()
-                self.invalidateCursorCell()
+        guard window != nil else { return }
+        installCursorLayer()
+        updateCursorLayer()
+    }
+
+    private static let blinkAnimationKey = "cursorBlink"
+
+    private func installCursorLayer() {
+        wantsLayer = true
+        guard cursorLayer.superlayer == nil, let host = layer else { return }
+        cursorLayer.anchorPoint = .zero
+        // The document view is flipped; the layer tree is not, so flip the
+        // cursor layer's geometry to match the coordinates draw(_:) works in.
+        cursorLayer.isGeometryFlipped = true
+        cursorLayer.actions = ["position": NSNull(), "bounds": NSNull(),
+                               "contents": NSNull(), "hidden": NSNull()]
+        host.addSublayer(cursorLayer)
+        restartBlink()
+
+        // Only the focused window blinks, as before — an unfocused pane shows a
+        // steady cursor instead of a distracting one.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            let o = NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let self = self, let w = note.object as? NSWindow, w === self.window else { return }
+                if name == NSWindow.didBecomeKeyNotification {
+                    self.restartBlink()
+                } else {
+                    self.cursorLayer.removeAnimation(forKey: Self.blinkAnimationKey)
+                }
             }
+            keyWindowObservers.append(o)
         }
     }
 
-    /// Mark only the cursor cell as needing redraw. The blink toggles every 500ms;
-    /// invalidating the entire visible area on every tick churns NSAttributedString
-    /// allocations and creates measurable memory pressure over hours.
-    private func invalidateCursorCell() {
-        guard let screen = screen else { return }
+    /// (Re)starts the blink from the visible phase. Core Animation runs this in
+    /// the render server, so no drawing happens on our side while it blinks.
+    private func restartBlink() {
+        cursorLayer.removeAnimation(forKey: Self.blinkAnimationKey)
+        let blink = CAKeyframeAnimation(keyPath: "opacity")
+        // Discrete, not interpolated: a terminal cursor snaps on and off.
+        blink.calculationMode = .discrete
+        blink.values = [1, 0]
+        blink.keyTimes = [0, 0.5]
+        blink.duration = 1
+        blink.repeatCount = .infinity
+        blink.isRemovedOnCompletion = false
+        cursorLayer.add(blink, forKey: Self.blinkAnimationKey)
+    }
+
+    /// Positions the cursor layer and, when the cell under it changed, redraws
+    /// its contents. Called from draw(_:), so it tracks every screen update
+    /// without needing its own invalidation path.
+    func updateCursorLayer() {
+        guard let screen = screen, cursorLayer.superlayer != nil else { return }
+
         let row = screen.scrollback.count + screen.cursorRow
-        let x = CGFloat(screen.cursorCol) * cellWidth + paddingLeft
-        let y = CGFloat(row) * cellHeight
-        // Width = 2 cells in case a wide character sits under the cursor.
-        let rect = NSRect(x: x, y: y, width: cellWidth * 2, height: cellHeight)
-        setNeedsDisplay(rect)
+        let col = screen.cursorCol
+        let cells = screen.cursorRow < screen.grid.count ? screen.grid[screen.cursorRow] : []
+        let cell = col < cells.count ? cells[col] : TerminalScreen.Cell()
+
+        // Everything that outranked the cursor in the old draw order still does:
+        // a search hit or a selection under the cursor wins, and IME composition
+        // draws its own caret.
+        let hidden = !screen.showCursor
+            || hasMarkedText()
+            || isCellSelected(line: row, col: col)
+            || searchMatchType(line: row, col: col) != 0
+        if cursorLayer.isHidden != hidden { cursorLayer.isHidden = hidden }
+        guard !hidden else { return }
+
+        let width = cell.wide ? cellWidth * 2 : cellWidth
+        let frame = CGRect(x: CGFloat(col) * cellWidth + paddingLeft,
+                           y: CGFloat(row) * cellHeight,
+                           width: width, height: cellHeight)
+        if cursorLayer.frame != frame { cursorLayer.frame = frame }
+
+        let scale = window?.backingScaleFactor ?? 2
+        let render = CursorRender(ch: cell.invisible ? " " : cell.char,
+                                  style: Self.styleIndex(bold: cell.bold, italic: cell.italic),
+                                  width: width, height: cellHeight, scale: scale,
+                                  fill: ThemeManager.shared.cursorColor,
+                                  text: ThemeManager.shared.cursorTextColor)
+        guard render != lastCursorRender else { return }
+        lastCursorRender = render
+
+        cursorLayer.contentsScale = scale
+        cursorLayer.contents = renderCursorImage(render)
+    }
+
+    /// The cursor block with the cell's character drawn over it in the cursor's
+    /// text colour — the same thing draw(_:) used to paint inline.
+    private func renderCursorImage(_ r: CursorRender) -> NSImage {
+        let size = NSSize(width: r.width, height: r.height)
+        return NSImage(size: size, flipped: true) { [weak self] rect in
+            r.fill.setFill()
+            rect.fill()
+            guard let self = self, r.ch != " " else { return true }
+            (String(r.ch) as NSString).draw(at: .zero, withAttributes: [
+                .font: self.styledFont(style: r.style),
+                .foregroundColor: r.text,
+            ])
+            return true
+        }
     }
 
     // MARK: - Drawing
@@ -1112,11 +1213,6 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 let drawWidth = cell.wide ? cellWidth * 2 : cellWidth
                 let rect = NSRect(x: x, y: y, width: drawWidth, height: cellHeight)
 
-                let isCursor = screenRow >= 0
-                    && screenRow == screen.cursorRow
-                    && col == screen.cursorCol
-                    && screen.showCursor && cursorOn
-                    && !hasMarkedText()
                 let isSel = isCellSelected(line: lineIdx, col: col)
                 let matchType = searchMatchType(line: lineIdx, col: col)
 
@@ -1128,8 +1224,6 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                     bg = NSColor.systemYellow.withAlphaComponent(0.4)
                 } else if isSel {
                     bg = .selectedTextBackgroundColor
-                } else if isCursor {
-                    bg = ThemeManager.shared.cursorColor
                 } else if cell.bg != .clear {
                     bg = cell.bg
                 }
@@ -1141,14 +1235,13 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
                 // Character
                 let ch = cell.char
-                if (ch == " " && !isCursor) || cell.invisible {
+                if ch == " " || cell.invisible {
                     col += cell.wide ? 2 : 1
                     continue
                 }
 
                 var fg: NSColor
-                if isCursor { fg = ThemeManager.shared.cursorTextColor }
-                else if isSel { fg = .white }
+                if isSel { fg = .white }
                 else { fg = (cell.fg == TerminalScreen.defaultFG) ? fgColor : cell.fg }
 
                 if cell.dim {
@@ -1223,6 +1316,10 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         if let marked = markedString, !marked.isEmpty {
             drawMarkedText(marked)
         }
+
+        // The cursor is a layer, not part of this drawing, but every screen
+        // update lands here — so this is where it learns the cursor moved.
+        updateCursorLayer()
     }
 
     private func drawMarkedText(_ text: String) {
@@ -1364,7 +1461,8 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
-        cursorOn = true
+        // Typing should show the cursor immediately rather than mid-blink-off.
+        restartBlink()
 
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags.contains(.control) {
