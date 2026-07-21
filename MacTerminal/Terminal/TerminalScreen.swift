@@ -34,6 +34,16 @@ class TerminalScreen {
     /// separate line.
     var scrollbackLineHardBreak: [Bool] = []
     var gridLineHardBreak: [Bool] = []
+    /// Parallel to grid/scrollback: `true` means something was actually written
+    /// into the row's last column, i.e. the row reached the full terminal width.
+    /// This cannot be recovered by inspecting cells afterwards — a written space
+    /// is indistinguishable from an untouched cell, and `trimmedRow` strips
+    /// trailing blanks outright before a row enters scrollback. Recording it at
+    /// write time is what lets a full-width row that happens to END IN A SPACE
+    /// still count as "full", so the line below it copies as a continuation
+    /// instead of breaking into a second line.
+    var scrollbackRowFull: [Bool] = []
+    var gridRowFull: [Bool] = []
     static let maxScrollback = 5000
     /// Once scrollback is full, every new line would otherwise `removeFirst(1)` on
     /// all parallel arrays — each an O(maxScrollback) element shift, paid on every
@@ -103,6 +113,8 @@ class TerminalScreen {
     private var savedMainScrollbackTimestamps: [Date]?
     private var savedMainGridWrapped: [Bool]?
     private var savedMainScrollbackWrapped: [Bool]?
+    private var savedMainGridRowFull: [Bool]?
+    private var savedMainScrollbackRowFull: [Bool]?
     private var savedMainGridLineHardBreak: [Bool]?
     private var savedMainScrollbackLineHardBreak: [Bool]?
     private var savedMainScrollbackLogical = 0
@@ -217,11 +229,64 @@ class TerminalScreen {
         self.grid = Self.emptyGrid(rows: rows, cols: cols)
         self.gridTimestamps = Array(repeating: Date(), count: rows)
         self.gridWrapped = Array(repeating: false, count: rows)
+        self.gridRowFull = Array(repeating: false, count: rows)
         self.gridLineHardBreak = Array(repeating: false, count: rows)
     }
 
     static func emptyGrid(rows: Int, cols: Int) -> [[Cell]] {
         Array(repeating: Array(repeating: Cell(), count: cols), count: rows)
+    }
+
+    /// Reshape a grid to exactly `rows` x `cols`, keeping the top-left content.
+    /// Works from the buffer's *actual* counts rather than the screen's declared
+    /// geometry, so it can also repair a buffer that already drifted out of sync.
+    static func fitGrid(_ g: [[Cell]], rows: Int, cols: Int) -> [[Cell]] {
+        var out = g
+        if out.count > rows {
+            out.removeLast(out.count - rows)
+        } else if out.count < rows {
+            out.append(contentsOf: Self.emptyGrid(rows: rows - out.count, cols: cols))
+        }
+        for r in 0..<rows where out[r].count != cols {
+            if out[r].count > cols {
+                out[r].removeLast(out[r].count - cols)
+            } else {
+                out[r].append(contentsOf: Array(repeating: Cell(), count: cols - out[r].count))
+            }
+        }
+        return out
+    }
+
+    /// Reshape a per-row parallel array (timestamps / wrap flags) to `count`.
+    static func fitRows<T>(_ a: [T], count: Int, fill: @autoclosure () -> T) -> [T] {
+        var out = a
+        if out.count > count {
+            out.removeLast(out.count - count)
+        } else if out.count < count {
+            out.append(contentsOf: (0..<(count - out.count)).map { _ in fill() })
+        }
+        return out
+    }
+
+    /// Repair `grid` and its parallel arrays if they ever disagree with the
+    /// declared `rows`/`cols`. Every `grid[cursorRow][cursorCol]` write below
+    /// is guarded only by `rows`/`cols`, so any drift turns an ordinary write
+    /// into an out-of-range trap that kills the whole app. Two integer compares
+    /// on the fast path; a real reshape only in the (buggy) drift case.
+    private func ensureGridGeometry() {
+        guard grid.count != rows || (grid.first?.count ?? cols) != cols
+            || gridTimestamps.count != rows || gridWrapped.count != rows
+            || gridRowFull.count != rows
+            || gridLineHardBreak.count != rows else { return }
+        grid = Self.fitGrid(grid, rows: rows, cols: cols)
+        gridTimestamps = Self.fitRows(gridTimestamps, count: rows, fill: Date())
+        gridWrapped = Self.fitRows(gridWrapped, count: rows, fill: false)
+        gridRowFull = Self.fitRows(gridRowFull, count: rows, fill: false)
+        gridLineHardBreak = Self.fitRows(gridLineHardBreak, count: rows, fill: false)
+        cursorRow = min(max(cursorRow, 0), max(rows - 1, 0))
+        cursorCol = min(max(cursorCol, 0), max(cols - 1, 0))
+        scrollTop = min(max(scrollTop, 0), max(rows - 1, 0))
+        scrollBottom = min(max(scrollBottom, scrollTop), max(rows - 1, 0))
     }
 
     /// Drop trailing cells that render and copy as nothing (blank space, no
@@ -357,21 +422,26 @@ class TerminalScreen {
     // MARK: - Character Output
 
     private func putChar(_ s: UnicodeScalar) {
+        ensureGridGeometry()
         let w = Self.isWideChar(s.value)
 
         // Wide char needs 2 cells — if at last column, wrap first
         if w && cursorCol == cols - 1 {
-            // Fill current cell with space and wrap
-            grid[cursorRow][cursorCol] = Cell()
-            if autoWrap { cursorCol = 0; lineFeed(); gridWrapped[cursorRow] = true }
+            // Fill current cell with space and wrap. This write precedes the
+            // bounds guard below, so it needs its own check.
+            if cursorRow >= 0, cursorRow < grid.count, cursorCol < grid[cursorRow].count {
+                grid[cursorRow][cursorCol] = Cell()
+            }
+            if autoWrap { cursorCol = 0; lineFeed(); markWrapped() }
             else { return }
         }
 
         if cursorCol >= cols {
-            if autoWrap { cursorCol = 0; lineFeed(); gridWrapped[cursorRow] = true }
+            if autoWrap { cursorCol = 0; lineFeed(); markWrapped() }
             else { cursorCol = cols - 1 }
         }
-        guard cursorRow >= 0, cursorRow < rows, cursorCol >= 0, cursorCol < cols else { return }
+        guard cursorRow >= 0, cursorRow < rows, cursorRow < grid.count,
+              cursorCol >= 0, cursorCol < cols, cursorCol < grid[cursorRow].count else { return }
         gridTimestamps[cursorRow] = Date()
         // Writing into this row (re)builds it; its line-end status is decided
         // when the cursor later leaves it via a line break (or not).
@@ -382,7 +452,7 @@ class TerminalScreen {
             grid[cursorRow][cursorCol - 1] = Cell()
         }
         // If overwriting a wide char's first cell, clear the padding cell too
-        if grid[cursorRow][cursorCol].wide && cursorCol + 1 < cols {
+        if grid[cursorRow][cursorCol].wide && cursorCol + 1 < grid[cursorRow].count {
             grid[cursorRow][cursorCol + 1] = Cell()
         }
 
@@ -401,13 +471,24 @@ class TerminalScreen {
         lastPrintedChar = s
         cursorCol += 1
 
-        if w && cursorCol < cols {
+        if w && cursorCol < cols && cursorCol < grid[cursorRow].count {
             // Place padding cell for second half of wide character
             grid[cursorRow][cursorCol] = Cell(
                 fg: currentFG, bg: currentBG, widePadding: true
             )
             cursorCol += 1
         }
+
+        // The write just reached the last column, so this row spans the full
+        // terminal width. Recorded now because it is unrecoverable later: a
+        // written space looks exactly like an untouched cell, and `trimmedRow`
+        // deletes trailing blanks before the row reaches scrollback.
+        if cursorCol >= cols, cursorRow < gridRowFull.count { gridRowFull[cursorRow] = true }
+    }
+
+    /// Flag the row the cursor is now on as an autowrapped continuation.
+    private func markWrapped() {
+        if cursorRow >= 0 && cursorRow < gridWrapped.count { gridWrapped[cursorRow] = true }
     }
 
     // MARK: - Wide Character Detection
@@ -451,6 +532,7 @@ class TerminalScreen {
     }
 
     private func scrollUp() {
+        ensureGridGeometry()
         // Reuse the row leaving the top of the screen as the fresh blank row at
         // the bottom instead of allocating a new `cols`-wide Cell array on every
         // single line feed. In no-wrap mode each row is `noWrapCols` cells wide,
@@ -464,6 +546,7 @@ class TerminalScreen {
             scrollback.append(Self.trimmedRow(grid[scrollTop]))
             scrollbackTimestamps.append(gridTimestamps[scrollTop])
             scrollbackWrapped.append(wrapped)
+            scrollbackRowFull.append(scrollTop < gridRowFull.count ? gridRowFull[scrollTop] : false)
             scrollbackLineHardBreak.append(gridLineHardBreak[scrollTop])
             if !wrapped { scrollbackLogicalLines += 1 }
             let prevAbs = scrollbackLogicalAbs.last ?? evictedLogicalAbs
@@ -478,6 +561,7 @@ class TerminalScreen {
                 scrollback.removeFirst(removeCount)
                 scrollbackTimestamps.removeFirst(removeCount)
                 scrollbackWrapped.removeFirst(removeCount)
+                scrollbackRowFull.removeFirst(removeCount)
                 scrollbackLineHardBreak.removeFirst(removeCount)
                 scrollbackLogicalAbs.removeFirst(removeCount)
             }
@@ -486,6 +570,7 @@ class TerminalScreen {
             grid[r] = grid[r + 1]
             gridTimestamps[r] = gridTimestamps[r + 1]
             gridWrapped[r] = gridWrapped[r + 1]
+            gridRowFull[r] = gridRowFull[r + 1]
             gridLineHardBreak[r] = gridLineHardBreak[r + 1]
         }
         // `recycled` is now uniquely referenced (the shift overwrote grid[scrollTop]
@@ -500,19 +585,23 @@ class TerminalScreen {
         }
         gridTimestamps[scrollBottom] = Date()
         gridWrapped[scrollBottom] = false
+        gridRowFull[scrollBottom] = false
         gridLineHardBreak[scrollBottom] = false
     }
 
     private func scrollDown() {
+        ensureGridGeometry()
         for r in stride(from: scrollBottom, to: scrollTop, by: -1) {
             grid[r] = grid[r - 1]
             gridTimestamps[r] = gridTimestamps[r - 1]
             gridWrapped[r] = gridWrapped[r - 1]
+            gridRowFull[r] = gridRowFull[r - 1]
             gridLineHardBreak[r] = gridLineHardBreak[r - 1]
         }
         grid[scrollTop] = Array(repeating: Cell(), count: cols)
         gridTimestamps[scrollTop] = Date()
         gridWrapped[scrollTop] = false
+        gridRowFull[scrollTop] = false
         gridLineHardBreak[scrollTop] = false
     }
 
@@ -676,6 +765,8 @@ class TerminalScreen {
         savedMainScrollbackTimestamps = scrollbackTimestamps
         savedMainGridWrapped = gridWrapped
         savedMainScrollbackWrapped = scrollbackWrapped
+        savedMainGridRowFull = gridRowFull
+        savedMainScrollbackRowFull = scrollbackRowFull
         savedMainGridLineHardBreak = gridLineHardBreak
         savedMainScrollbackLineHardBreak = scrollbackLineHardBreak
         savedMainCursorRow = cursorRow
@@ -683,10 +774,12 @@ class TerminalScreen {
         grid = Self.emptyGrid(rows: rows, cols: cols)
         gridTimestamps = Array(repeating: Date(), count: rows)
         gridWrapped = Array(repeating: false, count: rows)
+        gridRowFull = Array(repeating: false, count: rows)
         gridLineHardBreak = Array(repeating: false, count: rows)
         scrollback = []
         scrollbackTimestamps = []
         scrollbackWrapped = []
+        scrollbackRowFull = []
         scrollbackLineHardBreak = []
         savedMainScrollbackLogical = scrollbackLogicalLines
         scrollbackLogicalLines = 0
@@ -706,6 +799,8 @@ class TerminalScreen {
         scrollbackTimestamps = savedMainScrollbackTimestamps ?? []
         gridWrapped = savedMainGridWrapped ?? Array(repeating: false, count: rows)
         scrollbackWrapped = savedMainScrollbackWrapped ?? []
+        gridRowFull = savedMainGridRowFull ?? Array(repeating: false, count: rows)
+        scrollbackRowFull = savedMainScrollbackRowFull ?? []
         gridLineHardBreak = savedMainGridLineHardBreak ?? Array(repeating: false, count: rows)
         scrollbackLineHardBreak = savedMainScrollbackLineHardBreak ?? []
         scrollbackLogicalLines = savedMainScrollbackLogical
@@ -717,75 +812,101 @@ class TerminalScreen {
         savedMainGrid = nil; savedMainScrollback = nil
         savedMainGridTimestamps = nil; savedMainScrollbackTimestamps = nil
         savedMainGridWrapped = nil; savedMainScrollbackWrapped = nil
+        savedMainGridRowFull = nil; savedMainScrollbackRowFull = nil
         savedMainGridLineHardBreak = nil; savedMainScrollbackLineHardBreak = nil
         scrollTop = 0; scrollBottom = rows - 1
+        // The saved buffer is kept in step with `resize`, but restore is the one
+        // place where a whole grid is swapped in wholesale — normalize it so a
+        // stale buffer can never be handed to the writers.
+        ensureGridGeometry()
     }
 
     // MARK: - Erase Operations
 
     private func eraseInDisplay(_ mode: Int) {
+        ensureGridGeometry()
         switch mode {
         case 0:
             for c in cursorCol..<cols { grid[cursorRow][c] = Cell() }
             for r in (cursorRow+1)..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
+            // These rows no longer reach the last column.
+            for r in cursorRow..<rows { gridRowFull[r] = false }
         case 1:
             for c in 0...min(cursorCol, cols-1) { grid[cursorRow][c] = Cell() }
             for r in 0..<cursorRow { grid[r] = Array(repeating: Cell(), count: cols) }
+            for r in 0..<cursorRow { gridRowFull[r] = false }
         case 2:
             for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
+            for r in 0..<rows { gridRowFull[r] = false }
         case 3:
             // Erase display only; preserve scrollback buffer
             for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
             gridWrapped = Array(repeating: false, count: rows)
+            gridRowFull = Array(repeating: false, count: rows)
             gridLineHardBreak = Array(repeating: false, count: rows)
         default: break
         }
     }
 
     private func eraseInLine(_ mode: Int) {
+        ensureGridGeometry()
         switch mode {
-        case 0: for c in cursorCol..<cols { grid[cursorRow][c] = Cell() }
+        case 0:
+            for c in cursorCol..<cols { grid[cursorRow][c] = Cell() }
+            // Erased to the end of the line, so it no longer spans full width.
+            gridRowFull[cursorRow] = false
         case 1: for c in 0...min(cursorCol, cols-1) { grid[cursorRow][c] = Cell() }
-        case 2: grid[cursorRow] = Array(repeating: Cell(), count: cols)
+        case 2:
+            grid[cursorRow] = Array(repeating: Cell(), count: cols)
+            gridRowFull[cursorRow] = false
         default: break
         }
     }
 
     private func insertLines(_ n: Int) {
+        ensureGridGeometry()
         for _ in 0..<min(n, scrollBottom - cursorRow + 1) {
             grid.remove(at: min(scrollBottom, grid.count - 1))
             gridWrapped.remove(at: min(scrollBottom, gridWrapped.count - 1))
+            gridRowFull.remove(at: min(scrollBottom, gridRowFull.count - 1))
             gridLineHardBreak.remove(at: min(scrollBottom, gridLineHardBreak.count - 1))
             grid.insert(Array(repeating: Cell(), count: cols), at: cursorRow)
             gridWrapped.insert(false, at: cursorRow)
+            gridRowFull.insert(false, at: cursorRow)
             gridLineHardBreak.insert(false, at: cursorRow)
         }
     }
 
     private func deleteLines(_ n: Int) {
+        ensureGridGeometry()
         for _ in 0..<min(n, scrollBottom - cursorRow + 1) {
             grid.remove(at: cursorRow)
             gridWrapped.remove(at: cursorRow)
+            gridRowFull.remove(at: cursorRow)
             gridLineHardBreak.remove(at: cursorRow)
             grid.insert(Array(repeating: Cell(), count: cols), at: min(scrollBottom, grid.count - 1))
             gridWrapped.insert(false, at: min(scrollBottom, gridWrapped.count - 1))
+            gridRowFull.insert(false, at: min(scrollBottom, gridRowFull.count - 1))
             gridLineHardBreak.insert(false, at: min(scrollBottom, gridLineHardBreak.count - 1))
         }
     }
 
     private func deleteChars(_ n: Int) {
+        ensureGridGeometry()
         let count = min(n, cols - cursorCol)
         grid[cursorRow].removeSubrange(cursorCol..<(cursorCol + count))
         grid[cursorRow].append(contentsOf: Array(repeating: Cell(), count: count))
     }
 
     private func insertChars(_ n: Int) {
+        ensureGridGeometry()
         let count = min(n, cols - cursorCol)
         grid[cursorRow].insert(contentsOf: Array(repeating: Cell(), count: count), at: cursorCol)
         grid[cursorRow] = Array(grid[cursorRow].prefix(cols))
     }
 
     private func eraseChars(_ n: Int) {
+        ensureGridGeometry()
         for c in cursorCol..<min(cursorCol + n, cols) { grid[cursorRow][c] = Cell() }
     }
 
@@ -869,29 +990,46 @@ class TerminalScreen {
         for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
         gridTimestamps = Array(repeating: now, count: rows)
         gridWrapped = Array(repeating: false, count: rows)
+        gridRowFull = Array(repeating: false, count: rows)
         gridLineHardBreak = Array(repeating: false, count: rows)
     }
 
     func resize(newRows: Int, newCols: Int) {
         guard newRows != rows || newCols != cols else { return }
-        var newGrid = Self.emptyGrid(rows: newRows, cols: newCols)
-        for r in 0..<min(rows, newRows) {
-            for c in 0..<min(cols, newCols) { newGrid[r][c] = grid[r][c] }
+        grid = Self.fitGrid(grid, rows: newRows, cols: newCols)
+        gridTimestamps = Self.fitRows(gridTimestamps, count: newRows, fill: Date())
+        gridWrapped = Self.fitRows(gridWrapped, count: newRows, fill: false)
+        gridRowFull = Self.fitRows(gridRowFull, count: newRows, fill: false)
+        gridLineHardBreak = Self.fitRows(gridLineHardBreak, count: newRows, fill: false)
+
+        // The alternate screen is active: the *saved* main buffer must be
+        // reshaped too. Otherwise `exitAltScreen` restores a grid sized for the
+        // old geometry while `rows`/`cols` already hold the new one, and the
+        // next write — guarded only against `rows`/`cols` — indexes past the end
+        // of `grid` and traps (app-killing "Index out of range"). This is what
+        // crashed the app when a full-screen program (vim/less/top, or ssh
+        // emitting rmcup) exited in a tab that had been resized meanwhile —
+        // e.g. by closing another tab and letting the layout reflow.
+        if savedMainGrid != nil {
+            savedMainGrid = Self.fitGrid(savedMainGrid ?? [], rows: newRows, cols: newCols)
+            savedMainGridTimestamps = Self.fitRows(
+                savedMainGridTimestamps ?? [], count: newRows, fill: Date())
+            savedMainGridWrapped = Self.fitRows(
+                savedMainGridWrapped ?? [], count: newRows, fill: false)
+            savedMainGridRowFull = Self.fitRows(
+                savedMainGridRowFull ?? [], count: newRows, fill: false)
+            savedMainGridLineHardBreak = Self.fitRows(
+                savedMainGridLineHardBreak ?? [], count: newRows, fill: false)
+            savedMainCursorRow = min(max(savedMainCursorRow, 0), newRows - 1)
+            savedMainCursorCol = min(max(savedMainCursorCol, 0), newCols - 1)
         }
-        var newTimestamps = Array(repeating: Date(), count: newRows)
-        var newWrapped = Array(repeating: false, count: newRows)
-        var newHardBreak = Array(repeating: false, count: newRows)
-        for r in 0..<min(rows, newRows) {
-            newTimestamps[r] = gridTimestamps[r]
-            newWrapped[r] = gridWrapped[r]
-            newHardBreak[r] = gridLineHardBreak[r]
-        }
-        grid = newGrid; gridTimestamps = newTimestamps; gridWrapped = newWrapped
-        gridLineHardBreak = newHardBreak
+
         rows = newRows; cols = newCols
         scrollTop = 0; scrollBottom = rows - 1
-        cursorRow = min(cursorRow, rows - 1)
-        cursorCol = min(cursorCol, cols - 1)
+        cursorRow = min(max(cursorRow, 0), rows - 1)
+        cursorCol = min(max(cursorCol, 0), cols - 1)
+        savedCursorRow = min(max(savedCursorRow, 0), rows - 1)
+        savedCursorCol = min(max(savedCursorCol, 0), cols - 1)
     }
 
     /// Clear the scrollback buffer and all of its parallel arrays/counters.
@@ -899,6 +1037,7 @@ class TerminalScreen {
         scrollback.removeAll()
         scrollbackTimestamps.removeAll()
         scrollbackWrapped.removeAll()
+        scrollbackRowFull.removeAll()
         scrollbackLineHardBreak.removeAll()
         scrollbackLogicalLines = 0
         scrollbackLogicalAbs.removeAll()
@@ -932,8 +1071,17 @@ class TerminalScreen {
     }
 
     /// True if the physical row filled its full width (last column occupied).
+    /// Prefers the flag recorded at write time, which — unlike inspecting the
+    /// cells — still recognizes a full row whose last column holds a space.
     private func isPhysicalRowFull(_ idx: Int) -> Bool {
-        guard cols > 0, let cells = physicalRow(at: idx), cells.count >= cols else { return false }
+        guard cols > 0 else { return false }
+        if idx < scrollback.count {
+            if idx >= 0 && idx < scrollbackRowFull.count && scrollbackRowFull[idx] { return true }
+        } else {
+            let sr = idx - scrollback.count
+            if sr >= 0 && sr < gridRowFull.count && gridRowFull[sr] { return true }
+        }
+        guard let cells = physicalRow(at: idx), cells.count >= cols else { return false }
         let last = cells[cols - 1]
         return last.char != " " || last.bg != .clear || last.widePadding || last.wide
     }
