@@ -1076,7 +1076,10 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         // Discrete, not interpolated: a terminal cursor snaps on and off.
         blink.calculationMode = .discrete
         blink.values = [1, 0]
-        blink.keyTimes = [0, 0.5]
+        // Discrete mode wants one more key time than value: the start of each
+        // value plus the end of the last. Give it two and the animation is
+        // silently ignored — the cursor just sits there.
+        blink.keyTimes = [0, 0.5, 1]
         blink.duration = 1
         blink.repeatCount = .infinity
         blink.isRemovedOnCompletion = false
