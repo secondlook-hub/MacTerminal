@@ -136,6 +136,12 @@ class TerminalScreen {
     var onTitleChange: ((String) -> Void)?
     var onCommandEntered: ((String) -> Void)?
     var onResponse: ((String) -> Void)?
+    // Prompt themes (p10k, starship, …) re-emit the same OSC title/cwd on every
+    // zle redraw — i.e. on every keystroke. Forwarding an unchanged value fires
+    // an @Published mutation that re-lays-out the entire SwiftUI window
+    // (NavigationSplitView), which is the dominant per-keystroke input latency.
+    // Only report when the value actually changes.
+    private var lastReportedTitle: String?
     var currentDirectory: String?
     var onDirectoryChange: ((String) -> Void)?
     var inputBuffer = ""
@@ -962,20 +968,30 @@ class TerminalScreen {
 
     private func handleOSC(_ str: String) {
         if str.hasPrefix("0;") || str.hasPrefix("2;") {
-            onTitleChange?(String(str.dropFirst(2)))
+            reportTitle(String(str.dropFirst(2)))
         } else if str.hasPrefix("7;") {
             // OSC 7: current working directory — file://hostname/path
             let urlStr = String(str.dropFirst(2))
+            let previousDirectory = currentDirectory
             if let url = URL(string: urlStr), url.scheme == "file" {
                 currentDirectory = url.path
             } else {
                 currentDirectory = urlStr
             }
-            if let dir = currentDirectory {
+            if let dir = currentDirectory, dir != previousDirectory {
                 onDirectoryChange?(dir)
             }
-            onTitleChange?(currentDirectory ?? urlStr)
+            reportTitle(currentDirectory ?? urlStr)
         }
+    }
+
+    /// Forward a title to the UI only when it differs from the last one reported.
+    /// See `lastReportedTitle` — this is what keeps per-keystroke prompt redraws
+    /// from re-laying-out the whole window.
+    private func reportTitle(_ title: String) {
+        guard title != lastReportedTitle else { return }
+        lastReportedTitle = title
+        onTitleChange?(title)
     }
 
     func reset() {
@@ -986,6 +1002,7 @@ class TerminalScreen {
         currentUnderline = false; currentStrikethrough = false; currentInvisible = false
         applicationCursorKeys = false; showCursor = true; autoWrap = true
         bracketedPasteMode = false; insertMode = false
+        lastReportedTitle = nil
         let now = Date()
         for r in 0..<rows { grid[r] = Array(repeating: Cell(), count: cols) }
         gridTimestamps = Array(repeating: now, count: rows)
