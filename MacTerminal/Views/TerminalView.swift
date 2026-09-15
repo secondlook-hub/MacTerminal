@@ -691,7 +691,16 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
     // Appearance
     var bgColor: NSColor
-    var fgColor: NSColor
+    var fgColor: NSColor {
+        didSet { gutterColor = fgColor.withAlphaComponent(0.5) }
+    }
+    // Line-number / timestamp color. Derived from the terminal's own foreground
+    // color (not the theme's status-bar color) so the gutter stays legible when
+    // the user picks a custom background that clashes with the theme — e.g. a
+    // black background under the light theme, where the status-bar text is black
+    // and the timestamp would vanish. Cached (rebuilt only when fgColor changes)
+    // because the draw loop reads it once per visible line every frame.
+    private(set) var gutterColor: NSColor = NSColor.white.withAlphaComponent(0.5)
     private enum ColorEditTarget { case background, foreground }
     private var colorEditTarget: ColorEditTarget = .background
 
@@ -773,6 +782,9 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         bgColor = Self.loadColor(forKey: "terminalBGColor") ?? ThemeManager.shared.terminalBG
         fgColor = Self.loadColor(forKey: "terminalFGColor") ?? ThemeManager.shared.terminalFG
         super.init(frame: frame)
+        // didSet doesn't fire for the assignment above (it's in init), so seed
+        // the cached gutter color from the initial foreground color here.
+        gutterColor = fgColor.withAlphaComponent(0.5)
         updateLineNumberLayout()
         updateTimestampLayout()
 
@@ -1293,7 +1305,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 let lnY = y + (cellHeight - gutterFont.pointSize) / 2 - 1
                 drawLine(ln.line, x: lnX,
                          baselineY: lnY + gutterBaseline,
-                         color: ThemeManager.shared.statusBarText, in: ctx)
+                         color: gutterColor, in: ctx)
             }
 
             // Draw timestamp on the right side (last line of group, non-empty only)
@@ -1311,7 +1323,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 let tsY = y + (cellHeight - gutterFont.pointSize) / 2 - 1
                 drawLine(gutterText(timestampFormatter.string(from: ts)).line, x: tsX,
                          baselineY: tsY + gutterBaseline,
-                         color: ThemeManager.shared.statusBarText, in: ctx)
+                         color: gutterColor, in: ctx)
             }
         }
 

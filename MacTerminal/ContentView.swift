@@ -16,6 +16,16 @@ struct FocusedTabManagerKey: FocusedValueKey {
     typealias Value = TabManager
 }
 
+// The focused tab's timestamp visibility, published as a plain Bool. The
+// "Show Timestamp" menu item reads this instead of reaching through the
+// FocusedTabKey object: @FocusedValue tracks the value it's given but does not
+// observe an ObservableObject's @Published properties, so a per-tab toggle of
+// tab.showTimestamp would never refresh the menu's checkmark. Re-publishing the
+// Bool (the host view re-renders when the tab changes) keeps the check in sync.
+struct FocusedShowTimestampKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
 extension FocusedValues {
     var terminalScreen: TerminalScreen? {
         get { self[FocusedScreenKey.self] }
@@ -33,6 +43,10 @@ extension FocusedValues {
         get { self[FocusedTabManagerKey.self] }
         set { self[FocusedTabManagerKey.self] = newValue }
     }
+    var showTimestamp: Bool? {
+        get { self[FocusedShowTimestampKey.self] }
+        set { self[FocusedShowTimestampKey.self] = newValue }
+    }
 }
 
 struct ContentView: View {
@@ -49,6 +63,12 @@ struct ContentView: View {
     @State private var editingCommand: CommandItem?
     @AppStorage("showDirectoryTree") private var showDirectoryTree = false
     @StateObject private var directoryTreeModel = DirectoryTreeModel()
+
+    // Pulled out of the body's modifier chain: as an inline ternary it pushed
+    // the (already large) body over the Swift type-checker's time limit.
+    private var focusedShowTimestamp: Bool {
+        tabManager.selectedTab?.showTimestamp ?? false
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -90,6 +110,7 @@ struct ContentView: View {
         .focusedSceneValue(\.terminalTab, tabManager.selectedTab)
         .focusedSceneValue(\.isRecording, tabManager.selectedTab?.isRecording ?? false)
         .focusedSceneValue(\.tabManager, tabManager)
+        .focusedSceneValue(\.showTimestamp, focusedShowTimestamp)
         .navigationTitle(tabManager.selectedTab?.windowTitle ?? "MacTerminal")
         .onAppear {
             setupDirectoryTracking()

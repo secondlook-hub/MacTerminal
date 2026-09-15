@@ -14,6 +14,7 @@ struct DetachedWindowContent: View {
         .focusedSceneValue(\.terminalTab, tabManager.selectedTab)
         .focusedSceneValue(\.isRecording, tabManager.selectedTab?.isRecording ?? false)
         .focusedSceneValue(\.tabManager, tabManager)
+        .focusedSceneValue(\.showTimestamp, tabManager.selectedTab?.showTimestamp ?? false)
         .onReceive(tabManager.$tabs) { tabs in
             if tabs.isEmpty {
                 // Defer to next RunLoop iteration to avoid race condition:

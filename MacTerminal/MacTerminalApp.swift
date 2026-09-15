@@ -25,6 +25,10 @@ struct MacTerminalApp: App {
     @FocusedValue(\.terminalTab) var focusedTab
     @FocusedValue(\.isRecording) var isRecording
     @FocusedValue(\.tabManager) var focusedTabManager
+    // Observed separately from focusedTab: @FocusedValue does not react to a
+    // tab object's @Published properties, so the menu checkmark tracks this
+    // re-published Bool instead of focusedTab.showTimestamp.
+    @FocusedValue(\.showTimestamp) var focusedShowTimestamp
     @AppStorage("blockSelectionMode") var blockSelectionMode = false
     @AppStorage("showLineNumber") var showLineNumber = false
     @AppStorage("showTimestamp") var showTimestamp = false
@@ -235,7 +239,7 @@ struct MacTerminalApp: App {
                     }
                 ))
                 Toggle("Show Timestamp", isOn: Binding(
-                    get: { focusedTab?.showTimestamp ?? showTimestamp },
+                    get: { focusedShowTimestamp ?? showTimestamp },
                     set: { newValue in
                         if let tab = focusedTab {
                             tab.showTimestamp = newValue
