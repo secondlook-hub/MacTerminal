@@ -690,17 +690,46 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     private(set) var lineNumberWidth: CGFloat = 0
 
     // Appearance
-    var bgColor: NSColor
-    var fgColor: NSColor {
-        didSet { gutterColor = fgColor.withAlphaComponent(0.5) }
+    var bgColor: NSColor {
+        didSet { refreshDerivedColors() }
     }
-    // Line-number / timestamp color. Derived from the terminal's own foreground
-    // color (not the theme's status-bar color) so the gutter stays legible when
-    // the user picks a custom background that clashes with the theme — e.g. a
-    // black background under the light theme, where the status-bar text is black
-    // and the timestamp would vanish. Cached (rebuilt only when fgColor changes)
-    // because the draw loop reads it once per visible line every frame.
+    var fgColor: NSColor {
+        didSet { refreshDerivedColors() }
+    }
+    /// Whether the user has explicitly picked a foreground color. When they have
+    /// not, `fgColor` is only a theme default and the text follows the background:
+    /// picking a custom background alone (e.g. black under the light theme, whose
+    /// default foreground is near-black) must not leave the text invisible.
+    private var usesCustomFG = false
+    /// Foreground actually used for default-colored text. Equals `fgColor` when
+    /// the user chose it; otherwise it is derived from `bgColor` so body text
+    /// always contrasts with whatever background is in effect. Cached because the
+    /// draw loop reads it once per default-colored cell every frame.
+    private(set) var resolvedFG: NSColor = .white
+    // Line-number / timestamp color. Derived from `resolvedFG` (not the theme's
+    // status-bar color) so the gutter tracks the body text and stays legible when
+    // the user picks a custom background that clashes with the theme. Cached
+    // (rebuilt only when a color changes) because the draw loop reads it once per
+    // visible line every frame.
     private(set) var gutterColor: NSColor = NSColor.white.withAlphaComponent(0.5)
+
+    /// Recompute the colors derived from `bgColor`/`fgColor`. Cheap and called
+    /// only when a color actually changes, never from the draw loop.
+    private func refreshDerivedColors() {
+        resolvedFG = usesCustomFG ? fgColor : Self.legibleForeground(on: bgColor)
+        gutterColor = resolvedFG.withAlphaComponent(0.5)
+    }
+
+    /// A near-black or near-white foreground chosen to contrast with `bg`, using
+    /// perceived (Rec. 601) luminance. Keeps default text and the gutter readable
+    /// on any custom background without the user having to set a foreground too.
+    static func legibleForeground(on bg: NSColor) -> NSColor {
+        let c = bg.usingColorSpace(.sRGB) ?? bg
+        let luminance = 0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent
+        return luminance > 0.55
+            ? NSColor(white: 0.12, alpha: 1)
+            : NSColor(white: 0.92, alpha: 1)
+    }
     private enum ColorEditTarget { case background, foreground }
     private var colorEditTarget: ColorEditTarget = .background
 
@@ -780,11 +809,13 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         cellHeight = ceil(measure.height)
         paddingBottom = cellHeight
         bgColor = Self.loadColor(forKey: "terminalBGColor") ?? ThemeManager.shared.terminalBG
-        fgColor = Self.loadColor(forKey: "terminalFGColor") ?? ThemeManager.shared.terminalFG
+        let customFG = Self.loadColor(forKey: "terminalFGColor")
+        fgColor = customFG ?? ThemeManager.shared.terminalFG
         super.init(frame: frame)
-        // didSet doesn't fire for the assignment above (it's in init), so seed
-        // the cached gutter color from the initial foreground color here.
-        gutterColor = fgColor.withAlphaComponent(0.5)
+        // didSet doesn't fire for the assignments above (they're in init), so seed
+        // the custom-fg flag and the cached derived colors here.
+        usesCustomFG = customFG != nil
+        refreshDerivedColors()
         updateLineNumberLayout()
         updateTimestampLayout()
 
@@ -938,6 +969,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
                 scrollView.backgroundColor = color
             }
         case .foreground:
+            usesCustomFG = true
             fgColor = color
             Self.saveColor(color, forKey: "terminalFGColor")
         }
@@ -1026,6 +1058,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
         UserDefaults.standard.removeObject(forKey: "terminalFontSize")
 
         // Reset colors
+        usesCustomFG = false
         bgColor = ThemeManager.shared.terminalBG
         fgColor = ThemeManager.shared.terminalFG
         UserDefaults.standard.removeObject(forKey: "terminalBGColor")
@@ -1257,7 +1290,7 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
 
                 var fg: NSColor
                 if isSel { fg = .white }
-                else { fg = (cell.fg == TerminalScreen.defaultFG) ? fgColor : cell.fg }
+                else { fg = (cell.fg == TerminalScreen.defaultFG) ? resolvedFG : cell.fg }
 
                 if cell.dim {
                     fg = fg.withAlphaComponent(0.5)
