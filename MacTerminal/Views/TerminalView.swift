@@ -589,7 +589,16 @@ class TerminalDrawView: NSView, NSUserInterfaceValidations {
     /// frame was pure waste.
     private func gutterText(_ s: String) -> (line: CTLine, width: CGFloat) {
         if let c = gutterTextCache[s] { return c }
-        let attr = NSAttributedString(string: s, attributes: [.font: gutterFont!])
+        // `kCTForegroundColorFromContextAttributeName: true` is essential: without
+        // it CTLineDraw ignores the context fill colour and paints with the string's
+        // own foreground, which defaults to *black* — invisible on a dark background.
+        // That is why setting `gutterColor` alone never fixed the black-on-black
+        // gutter; the colour is applied by drawLine() via the context, so the line
+        // must be told to honour it.
+        let attr = NSAttributedString(string: s, attributes: [
+            .font: gutterFont!,
+            NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+        ])
         let line = CTLineCreateWithAttributedString(attr)
         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         if gutterTextCache.count >= Self.textCacheLimit {
